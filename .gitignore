@@ -1,0 +1,11 @@
+# Build artifacts
+/_build/
+/deps/
+/doc/
+/.fetch
+*.ez
+masthead
+masthead.bat
+/tmp/
+erl_crash.dump
+.DS_Store
