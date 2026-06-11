@@ -22,10 +22,24 @@ production.
 
 ## Install
 
+### Homebrew (recommended)
+
+```sh
+brew install joeridijkstra/tap/masthead
+```
+
+To track the latest `main` instead of the newest release:
+
+```sh
+brew install --HEAD joeridijkstra/tap/masthead
+```
+
+### From source
+
 Requires Elixir (`~> 1.15`; developed on 1.18 / OTP 28).
 
 ```sh
-git clone <this repo> ~/personal/masthead_cli
+git clone https://github.com/JoeriDijkstra/masthead-cli ~/personal/masthead_cli
 cd ~/personal/masthead_cli
 mix deps.get
 mix escript.build          # produces ./masthead
@@ -35,7 +49,7 @@ Put it on your `PATH`:
 
 ```sh
 # option A: symlink the built binary
-ln -s "$PWD/masthead" /usr/local/bin/masthead
+ln -s "$PWD/masthead" ~/.local/bin/masthead
 
 # option B: install into ~/.mix/escripts (then add it to PATH)
 mix escript.install
