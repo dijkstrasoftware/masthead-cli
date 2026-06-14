@@ -2,9 +2,11 @@ defmodule MastheadCli.CLI do
   @moduledoc """
   Command-line entrypoint for the `masthead` escript.
 
+      masthead create NAME                       Scaffold a new theme
       masthead preview [--dir PATH] [--port N]   Serve a live preview
       masthead validate [--dir PATH]             Check a theme without serving
       masthead package [--dir PATH] [--out P]    Bundle the theme into a zip
+      masthead doctor                            Check the runtime versions
       masthead version                           Print the version
       masthead help                              Show usage
 
@@ -18,9 +20,11 @@ defmodule MastheadCli.CLI do
 
   def main(argv) do
     case argv do
+      ["create" | rest] -> create(rest)
       ["preview" | rest] -> preview(rest)
       ["validate" | rest] -> validate(rest)
       ["package" | rest] -> package(rest)
+      ["doctor" | _] -> doctor()
       ["version" | _] -> IO.puts("masthead #{@version}")
       ["--version" | _] -> IO.puts("masthead #{@version}")
       ["help" | _] -> IO.puts(usage())
@@ -29,6 +33,56 @@ defmodule MastheadCli.CLI do
       [] -> IO.puts(usage())
       [cmd | _] -> unknown(cmd)
     end
+  end
+
+  # ---- create ----
+
+  # Clone the starter theme into a new directory. The positional NAME (or
+  # --dir) is the directory to create; its basename seeds the slug, and a
+  # title-cased version of that becomes the theme name.
+  defp create(args) do
+    {opts, rest} = parse(args)
+    target = List.first(rest) || opts[:dir]
+
+    if is_nil(target) do
+      IO.puts(:stderr, "Usage: masthead create NAME    (e.g. masthead create my-theme)")
+      System.halt(1)
+    end
+
+    dir = Path.expand(target)
+    slug = MastheadCli.Scaffold.slugify(Path.basename(dir))
+
+    if slug == "" do
+      IO.puts(:stderr, "Could not derive a theme slug from #{inspect(Path.basename(dir))}.")
+      IO.puts(:stderr, "Pick a name with lowercase letters or digits, e.g. masthead create my-theme.")
+      System.halt(1)
+    end
+
+    name = MastheadCli.Scaffold.titleize(slug)
+
+    case MastheadCli.Scaffold.create(dir, name, slug) do
+      :ok ->
+        print_create_success(dir, name, slug)
+
+      {:error, message} ->
+        IO.puts(:stderr, message)
+        System.halt(1)
+    end
+  end
+
+  defp print_create_success(dir, name, slug) do
+    label = &MastheadCli.Term.dim/1
+    rel = Path.relative_to_cwd(dir)
+
+    IO.puts("""
+    #{MastheadCli.Term.blue("✓")} #{MastheadCli.Term.blue_bold("created")} #{label.("#{name} (#{slug})")}
+
+      #{MastheadCli.Term.blue("→")} #{dir}
+
+    #{label.("Next:")}
+      cd #{rel}
+      masthead preview
+    """)
   end
 
   # ---- preview ----
@@ -42,7 +96,7 @@ defmodule MastheadCli.CLI do
     # Start the preview on a clean screen.
     MastheadCli.Term.clear()
 
-    ensure_runtime_started()
+    ensure_runtime!()
 
     # A missing manifest almost always means "wrong directory" — bail with a
     # clear message. Manifest/template *errors*, by contrast, are exactly
@@ -110,7 +164,7 @@ defmodule MastheadCli.CLI do
     {opts, _rest} = parse(args)
     dir = Path.expand(opts[:dir] || ".")
 
-    ensure_runtime_started()
+    ensure_runtime!()
 
     case validate_theme(dir, quiet: false) do
       :ok ->
@@ -159,7 +213,7 @@ defmodule MastheadCli.CLI do
     # The output path may be given as --out/-o or as a bare positional arg.
     out = opts[:out] || List.first(rest)
 
-    ensure_runtime_started()
+    ensure_runtime!()
 
     case MastheadCli.Packager.package(dir, out, opts[:bump]) do
       {:ok, summary} ->
@@ -203,6 +257,41 @@ defmodule MastheadCli.CLI do
     Enum.each(summary.warnings, fn w ->
       IO.puts(MastheadCli.Term.style("  ! #{w}", ["33"]))
     end)
+  end
+
+  # ---- doctor ----
+
+  # Reports the toolchain the escript was built with vs. the runtime it's
+  # executing on, and flags an incompatible (older) Erlang/OTP.
+  defp doctor do
+    build = MastheadCli.Preflight.build_info()
+    runtime = MastheadCli.Preflight.runtime_info()
+    label = &MastheadCli.Term.dim/1
+
+    IO.puts("""
+    #{MastheadCli.Term.blue_bold("masthead")} #{label.("doctor")} #{label.("(v#{@version})")}
+
+      #{label.("built with")}
+        elixir   #{build.elixir}
+        erlang   OTP #{build.otp} · ERTS #{build.erts}
+
+      #{label.("running on")}
+        elixir   #{runtime.elixir}
+        erlang   OTP #{runtime.otp} · ERTS #{runtime.erts}
+    """)
+
+    case MastheadCli.Preflight.check() do
+      :ok ->
+        IO.puts("  #{MastheadCli.Term.blue("✓")} Erlang runtime is compatible with the build\n")
+
+      {:error, message} ->
+        IO.puts(
+          MastheadCli.Term.style("  ✗ Erlang runtime is older than the build\n", ["1", "31"])
+        )
+
+        IO.puts(message)
+        System.halt(1)
+    end
   end
 
   # ---- shared ----
@@ -255,6 +344,21 @@ defmodule MastheadCli.CLI do
   defp normalize_bump(["--bump" | rest]), do: ["--bump=bugfix" | normalize_bump(rest)]
   defp normalize_bump([arg | rest]), do: [arg | normalize_bump(rest)]
 
+  # Bail out with a clear message if the OTP runtime is older than the one
+  # this escript was built against, then bring the bundled apps up.
+  defp ensure_runtime! do
+    case MastheadCli.Preflight.check() do
+      :ok ->
+        :ok
+
+      {:error, message} ->
+        IO.puts(:stderr, message)
+        System.halt(1)
+    end
+
+    ensure_runtime_started()
+  end
+
   defp ensure_runtime_started do
     Enum.each(@runtime_apps, fn app ->
       case Application.ensure_all_started(app) do
@@ -276,9 +380,11 @@ defmodule MastheadCli.CLI do
     masthead #{@version} — local preview for Masthead themes
 
     USAGE
+      masthead create NAME           Scaffold a new theme from the template
       masthead preview [options]     Serve a live preview of the theme
       masthead validate [options]    Validate the theme and exit
       masthead package [options]     Bundle the theme into an installable zip
+      masthead doctor                Check the Erlang/Elixir runtime versions
       masthead version               Print the version
       masthead help                  Show this help
 
@@ -292,6 +398,7 @@ defmodule MastheadCli.CLI do
                         major | minor | bugfix (bare --bump = bugfix)
 
     EXAMPLES
+      masthead create my-theme               # scaffold a new theme directory
       cd my-theme && masthead preview
       masthead preview --dir ~/themes/acme --port 4020
       masthead validate

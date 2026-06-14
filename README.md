@@ -58,6 +58,8 @@ mix escript.install
 ## Usage
 
 ```sh
+masthead create my-theme         # scaffold a new theme from the template
+
 cd my-theme
 masthead preview                 # serves http://localhost:4010
 masthead preview --port 4020     # pick a port
@@ -65,8 +67,28 @@ masthead preview --dir ../other  # point elsewhere
 
 masthead validate                # check manifest + templates, no server
 masthead package                 # zip the theme to ~/Desktop
+masthead doctor                  # report Erlang/Elixir versions, flag mismatches
 masthead help
 ```
+
+## Creating a theme
+
+`masthead create NAME` scaffolds a new theme in a `NAME/` directory by
+cloning the [theme template](https://github.com/JoeriDijkstra/masthead-template)
+— a complete, valid starter (`manifest.json`, `theme.css`, and the six
+templates). The template's git history is removed so you start clean, and
+the manifest's `name`/`slug` are set from `NAME`:
+
+```sh
+masthead create my-theme
+cd my-theme
+masthead preview
+```
+
+The directory name seeds the slug (lowercased, hyphenated), so
+`masthead create "My Theme"` produces slug `my-theme` and name `My Theme`.
+`create` requires `git` on your PATH and won't overwrite a non-empty
+directory.
 
 ## Packaging
 
