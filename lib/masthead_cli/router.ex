@@ -113,17 +113,15 @@ defmodule MastheadCli.Router do
     {:ok, 404, Renderer.render_not_found(theme, %{site: site, pages: nav_pages(site, pages)})}
   end
 
-  # A blog-format page lists posts with the body as a markdown intro;
-  # everything else renders as a plain page. Mirrors render_page_or_404.
-  defp render_page_target(theme, site, %{format: "blog"} = page, posts, nav) do
-    body_html = Content.render_body(page.body, "markdown")
-
+  # A theme page renders a templates/pages/<template>.liquid layout with the
+  # full post list available; everything else renders as a plain page. Mirrors
+  # PublicController.render_page_or_404/3.
+  defp render_page_target(theme, site, %{format: "theme"} = page, posts, nav) do
     {:ok, 200,
-     Renderer.render_blog(theme, %{
+     Renderer.render_theme_page(theme, %{
        site: site,
        page: page,
        posts: posts,
-       body_html: body_html,
        pages: nav
      })}
   end

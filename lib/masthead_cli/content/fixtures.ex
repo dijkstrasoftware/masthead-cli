@@ -149,13 +149,11 @@ defmodule MastheadCli.Content.Fixtures do
       %{
         title: "Blog",
         slug: "blog",
-        format: "blog",
+        format: "theme",
+        template: "blog",
         show_in_nav: true,
         metadata: %{},
-        body: """
-        Writing about software, tools, and the slow craft of building
-        things that last. The posts below are sample data.
-        """
+        body: ""
       }
     ]
   end

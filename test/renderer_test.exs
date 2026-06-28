@@ -20,6 +20,46 @@ defmodule MastheadCli.RendererTest do
     %{theme: theme, site: site}
   end
 
+  test "renders a theme page with object + list defaults from its sidecar config", %{site: site} do
+    {dir, theme} =
+      FixtureTheme.load!(%{
+        "templates/pages/home.liquid" =>
+          ~s(<h1>{{ page.metadata.hero.title | escape }}</h1>) <>
+            "{% for f in page.metadata.features %}<li>{{ f.name | escape }}</li>{% endfor %}",
+        "templates/pages/home.json" =>
+          ~s({"metadata":[) <>
+            ~s({"key":"hero","label":"Hero","type":"object","fields":[{"key":"title","label":"T","type":"string","default":"Welcome"}]},) <>
+            ~s({"key":"features","label":"F","type":"list","fields":[{"key":"name","label":"N","type":"string","default":""}],) <>
+            ~s("default":[{"name":"Fast"},{"name":"Simple"}]}]})
+      })
+
+    on_exit(fn -> File.rm_rf!(dir) end)
+
+    page = %{title: "Home", slug: "home", format: "theme", template: "home", metadata: %{}}
+    html = Renderer.render_theme_page(theme, %{site: site, page: page, posts: [], pages: []})
+
+    assert html =~ "<h1>Welcome</h1>"
+    assert html =~ "<li>Fast</li>"
+    assert html =~ "<li>Simple</li>"
+  end
+
+  test "a theme page with a missing template falls back to the page template", %{
+    theme: theme,
+    site: site
+  } do
+    page = %{
+      title: "Gone",
+      slug: "gone",
+      format: "theme",
+      template: "does-not-exist",
+      metadata: %{}
+    }
+
+    html = Renderer.render_theme_page(theme, %{site: site, page: page, posts: [], pages: []})
+    # The fixture's page template renders the title; no crash.
+    assert html =~ "Gone"
+  end
+
   test "index injects token defaults as a :root cascade", %{theme: theme, site: site} do
     html = Renderer.render_index(theme, %{site: site, posts: [], pages: []})
 

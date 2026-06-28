@@ -50,20 +50,18 @@ defmodule MastheadCli.Renderer do
     })
   end
 
-  @doc "Render a blog-format page: intro + post list."
-  def render_blog(theme, %{
-        site: site,
-        page: page,
-        posts: posts,
-        body_html: body_html,
-        pages: pages
-      }) do
-    render(theme, site, :blog, %{
+  @doc """
+  Render a theme page: a `templates/pages/<template>.liquid` page. It gets the
+  full post list (so e.g. a blog page can list posts) and its settings come from
+  the page's sidecar config; theme pages have no editable body.
+  """
+  def render_theme_page(theme, %{site: site, page: page, posts: posts, pages: pages}) do
+    render(theme, site, {:page_template, page.template}, %{
       "page" => Presenter.page(page),
       "posts" => Presenter.posts(posts),
       "pages" => Presenter.pages(pages),
       "post" => nil,
-      "body_html" => body_html
+      "body_html" => ""
     })
   end
 
@@ -98,13 +96,13 @@ defmodule MastheadCli.Renderer do
       }
     }
 
-    inner_template = Map.fetch!(theme.templates, target)
+    inner_template = fetch_template!(theme, target)
     layout_template = Map.fetch!(theme.templates, :layout)
 
     inner_context =
       base_context
       |> Map.merge(target_assigns)
-      |> compose_page_metadata(manifest)
+      |> compose_page_metadata(theme)
 
     {:ok, inner_iodata, _errs} = Sandbox.render(inner_template, inner_context)
     inner_html = IO.iodata_to_binary(inner_iodata)
@@ -115,16 +113,47 @@ defmodule MastheadCli.Renderer do
     IO.iodata_to_binary(layout_iodata)
   end
 
-  # When this render target carries a `page`, replace its raw `metadata`
-  # override map with the effective merge against the manifest schema, so
-  # templates can read `page.metadata.<key>` and always see a value.
-  defp compose_page_metadata(%{"page" => %{} = page} = context, manifest) do
-    raw = Map.get(page, "metadata", %{})
-    effective = Manifest.effective_metadata(manifest, raw)
-    Map.put(context, "page", Map.put(page, "metadata", effective))
+  # Pick the inner template: a plain atom is a fixed template; a
+  # `{:page_template, name}` is a theme page from `templates/pages/`. A missing
+  # page template falls back to the legacy `:blog` (for that name) or the
+  # generic `:page` so the page still renders.
+  defp fetch_template!(theme, target) when is_atom(target),
+    do: Map.fetch!(theme.templates, target)
+
+  defp fetch_template!(theme, {:page_template, name}) do
+    cond do
+      is_binary(name) and Map.has_key?(theme.page_templates, name) -> theme.page_templates[name]
+      name == "blog" and Map.has_key?(theme.templates, :blog) -> theme.templates[:blog]
+      true -> Map.fetch!(theme.templates, :page)
+    end
   end
 
-  defp compose_page_metadata(context, _manifest), do: context
+  # A theme page resolves its overrides against its sidecar config's field
+  # schema; every other page uses the theme's global `metadata` schema. In the
+  # CLI there are no uploads, so `file` values are used verbatim (no id→URL).
+  defp compose_page_metadata(%{"page" => %{"template" => template} = page} = context, theme)
+       when is_binary(template) and template != "" do
+    apply_effective(context, page, page_config_fields(theme, template))
+  end
+
+  defp compose_page_metadata(%{"page" => %{} = page} = context, theme) do
+    apply_effective(context, page, theme.manifest.metadata)
+  end
+
+  defp compose_page_metadata(context, _theme), do: context
+
+  defp page_config_fields(theme, template) do
+    case Map.get(theme.page_configs, template) do
+      %{metadata: fields} when is_list(fields) -> fields
+      _ -> []
+    end
+  end
+
+  defp apply_effective(context, page, fields) do
+    raw = Map.get(page, "metadata", %{})
+    effective = Manifest.merge_fields(fields, raw)
+    Map.put(context, "page", Map.put(page, "metadata", effective))
+  end
 
   # The set of token keys declared as `file` in the manifest. These are
   # emitted as `url(...)` in the cascade.

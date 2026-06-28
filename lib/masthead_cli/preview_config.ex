@@ -158,6 +158,8 @@ defmodule MastheadCli.PreviewConfig do
       title: m["title"],
       slug: m["slug"],
       format: m["format"] || "markdown",
+      # For `"format": "theme"` pages: which templates/pages/<template>.liquid.
+      template: m["template"],
       show_in_nav: Map.get(m, "show_in_nav", true),
       metadata: m["metadata"] || %{},
       body: m["body"] || ""

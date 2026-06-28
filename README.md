@@ -98,13 +98,14 @@ zip — exactly the files the platform consumes, and nothing else:
 ```
 manifest.json
 theme.css
-templates/{layout,index,post,page,blog,not_found}.liquid
+templates/{layout,index,post,page,not_found}.liquid
+templates/pages/*.liquid + *.json   (theme pages + their settings)
 assets/…            (only whitelisted file types, no symlinks)
 ```
 
 Dev-only files (`preview/`, `preview.json`, `README.md`, `.git`,
 `.DS_Store`, stray `*.zip`, …) are left out. The theme is validated first
-(manifest + all six templates must parse), so a broken theme won't
+(manifest + all templates + page configs must parse), so a broken theme won't
 package, and the platform's upload limits (5 MB zip, 25 MB unpacked, 200
 files) plus the reserved-slug / asset-type rules are checked up front and
 reported as warnings.
@@ -156,7 +157,8 @@ manifest.json
 theme.css
 templates/
   layout.liquid      index.liquid     post.liquid
-  page.liquid        blog.liquid      not_found.liquid
+  page.liquid        not_found.liquid
+  pages/             (optional — theme pages: <name>.liquid + <name>.json)
 assets/              (optional — images, fonts, extra css)
 ```
 

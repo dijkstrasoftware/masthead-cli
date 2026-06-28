@@ -1,7 +1,7 @@
 defmodule MastheadCli.Theme do
   @moduledoc """
-  Load a theme from a directory on disk: `manifest.json`, `theme.css`, and
-  the six required Liquid templates under `templates/`.
+  Load a theme from a directory on disk: `manifest.json`, `theme.css`, the
+  fixed Liquid templates, and any theme pages under `templates/pages/`.
 
   The directory layout mirrors what a Masthead theme zip contains:
 
@@ -12,22 +12,32 @@ defmodule MastheadCli.Theme do
         index.liquid
         post.liquid
         page.liquid
-        blog.liquid
         not_found.liquid
-      assets/            (optional — images, fonts, extra css)
+        blog.liquid           (optional — legacy fixed template)
+        pages/
+          <name>.liquid       (a theme page)
+          <name>.json         (its optional settings config)
+      assets/                 (optional — images, fonts, extra css)
 
   Loading is deliberately uncached: the preview server re-reads on every
-  request so edits to templates, CSS, or the manifest show up on refresh.
+  request so edits to templates, CSS, the manifest, or page configs show up
+  on refresh.
   """
 
   alias MastheadCli.{Manifest, Sandbox}
 
-  @required_templates ~w(layout index post page blog not_found)a
+  # `blog` is no longer a required fixed template — it moved into the
+  # `templates/pages/` folder as a theme page — but it's still loaded
+  # optionally so themes authored before that change keep working.
+  @required_templates ~w(layout index post page not_found)a
+  @optional_templates ~w(blog)a
 
   @type t :: %{
           manifest: Manifest.t(),
           css: String.t(),
           templates: %{atom() => Solid.Template.t()},
+          page_templates: %{String.t() => Solid.Template.t()},
+          page_configs: %{String.t() => Manifest.page_config()},
           asset_base: String.t(),
           dir: String.t()
         }
@@ -44,12 +54,16 @@ defmodule MastheadCli.Theme do
   @spec load(String.t()) :: {:ok, t()} | {:error, term()}
   def load(dir) do
     with {:ok, manifest} <- load_manifest(dir),
-         {:ok, templates} <- load_templates(dir) do
+         {:ok, templates} <- load_templates(dir),
+         {:ok, page_templates} <- load_page_templates(dir),
+         {:ok, page_configs} <- load_page_configs(dir) do
       {:ok,
        %{
          manifest: manifest,
          css: load_css(dir),
          templates: templates,
+         page_templates: page_templates,
+         page_configs: page_configs,
          asset_base: "/assets",
          dir: dir
        }}
@@ -106,10 +120,79 @@ defmodule MastheadCli.Theme do
     errors = for {name, {:error, msg}} <- results, do: {name, msg}
 
     if errors == [] do
-      {:ok, Map.new(results, fn {name, {:ok, template}} -> {name, template} end)}
+      required = Map.new(results, fn {name, {:ok, template}} -> {name, template} end)
+      {:ok, load_optional_templates(dir, required)}
     else
       {:error, {:templates, errors}}
     end
+  end
+
+  # Optional fixed templates (e.g. legacy `blog`) load only when present.
+  defp load_optional_templates(dir, acc) do
+    Enum.reduce(@optional_templates, acc, fn name, acc ->
+      path = Path.join([dir, "templates", "#{name}.liquid"])
+
+      with {:ok, source} <- File.read(path),
+           {:ok, template} <- Sandbox.parse(source) do
+        Map.put(acc, name, template)
+      else
+        _ -> acc
+      end
+    end)
+  end
+
+  # Page templates live in `templates/pages/<name>.liquid`. Names are author
+  # filenames, so they stay STRING-keyed (never `String.to_atom/1`).
+  defp load_page_templates(dir) do
+    page_dir = Path.join([dir, "templates", "pages"])
+
+    page_dir
+    |> Path.join("*.liquid")
+    |> Path.wildcard()
+    |> Enum.reject(&File.dir?/1)
+    |> Enum.reduce_while({:ok, %{}}, fn path, {:ok, acc} ->
+      name = Path.basename(path, ".liquid")
+
+      case File.read(path) do
+        {:ok, source} ->
+          case Sandbox.parse(source) do
+            {:ok, template} ->
+              {:cont, {:ok, Map.put(acc, name, template)}}
+
+            {:error, err} ->
+              {:halt, {:error, {:templates, [{"pages/#{name}", parse_error_message(err)}]}}}
+          end
+
+        {:error, _} ->
+          {:halt, {:error, {:templates, [{"pages/#{name}", "unreadable"}]}}}
+      end
+    end)
+  end
+
+  # Each page template may carry a sidecar `templates/pages/<name>.json`
+  # describing its editable settings (the page config). Optional; a
+  # present-but-invalid one is reported like a bad manifest.
+  defp load_page_configs(dir) do
+    page_dir = Path.join([dir, "templates", "pages"])
+
+    page_dir
+    |> Path.join("*.json")
+    |> Path.wildcard()
+    |> Enum.reject(&File.dir?/1)
+    |> Enum.reduce_while({:ok, %{}}, fn path, {:ok, acc} ->
+      name = Path.basename(path, ".json")
+
+      case File.read(path) do
+        {:ok, json} ->
+          case Manifest.parse_page_config(json) do
+            {:ok, config} -> {:cont, {:ok, Map.put(acc, name, config)}}
+            {:error, errors} -> {:halt, {:error, {:page_config, name, errors}}}
+          end
+
+        {:error, _} ->
+          {:cont, {:ok, acc}}
+      end
+    end)
   end
 
   defp parse_error_message(%Solid.TemplateError{} = err), do: Exception.message(err)
