@@ -44,6 +44,7 @@ defmodule MastheadCli.Content.Fixtures do
           "The most exciting decision you can make is usually the most boring one. A short defense of dependable tools.",
         format: "markdown",
         published_at: days_ago(2),
+        tags: [tag("Engineering"), tag("Opinion")],
         body: """
         Every project starts with the same temptation: reach for the newest,
         shiniest thing. Resist it.
@@ -79,6 +80,7 @@ defmodule MastheadCli.Content.Fixtures do
           "Files you can read in fifty years, grep in a second, and version with git. Plain text is quietly the best format we have.",
         format: "markdown",
         published_at: days_ago(9),
+        tags: [tag("Engineering"), tag("Tools")],
         body: """
         There's a reason the tools that last are the ones built on plain
         text. Markdown, CSV, config files, source code — all just text.
@@ -108,6 +110,7 @@ defmodule MastheadCli.Content.Fixtures do
           "The Unix idea that refuses to die: do one thing well, and let things talk to each other.",
         format: "markdown",
         published_at: days_ago(21),
+        tags: [tag("Tools")],
         body: """
         A big monolithic tool tries to anticipate every need and fails at
         the edges. A small tool does one thing and gets out of the way.
@@ -156,6 +159,11 @@ defmodule MastheadCli.Content.Fixtures do
         body: ""
       }
     ]
+  end
+
+  # A tag, slugged the way the platform slugs it.
+  defp tag(name) do
+    %{name: name, slug: name |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "-")}
   end
 
   # Preview timestamps are relative to "now" so dates always look fresh.

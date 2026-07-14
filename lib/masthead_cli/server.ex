@@ -1,36 +1,50 @@
 defmodule MastheadCli.Server do
   @moduledoc """
-  Starts a Bandit HTTP server bound to localhost that serves the preview
-  router, then blocks the calling (escript) process so the VM stays alive.
+  Starts the preview: a Bandit listener bound to localhost, the file watcher that
+  tells open browsers to reload, and the pub/sub registry between them. Then it
+  blocks the calling (escript) process so the VM stays alive.
   """
 
+  alias MastheadCli.Preview.{Events, Watcher}
   alias MastheadCli.Router
 
   @doc """
-  Start serving `dir` on `port` (localhost only) and block forever.
+  Serve `dir` on `port` (localhost only) and block forever.
 
-  `inspector?` toggles the dev-only live token inspector overlay.
+  `editor?` toggles the settings sidebar: with it off, the theme is served bare
+  at the production routes and nothing at all is injected into its HTML.
 
-  Returns `{:error, reason}` if the listener can't bind (e.g. the port is
-  already in use); otherwise it never returns.
+  Returns `{:error, reason}` if the listener can't bind (e.g. the port is already
+  taken); otherwise it never returns.
   """
-  def serve(dir, port, inspector? \\ true) do
-    case start_listener(dir, port, inspector?) do
+  def serve(dir, port, editor? \\ true) do
+    case Supervisor.start_link(children(dir, port, editor?), strategy: :one_for_one) do
       {:ok, _pid} ->
         Process.sleep(:infinity)
+
+      {:error, {:shutdown, {:failed_to_start_child, _child, reason}}} ->
+        {:error, reason}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp start_listener(dir, port, inspector?) do
-    Bandit.start_link(
-      plug: {Router, dir: dir, inspector: inspector?},
-      scheme: :http,
-      ip: {127, 0, 0, 1},
-      port: port,
-      startup_log: false
-    )
+  defp children(dir, port, editor?) do
+    listener =
+      {Bandit,
+       plug: {Router, dir: dir, editor: editor?},
+       scheme: :http,
+       ip: {127, 0, 0, 1},
+       port: port,
+       startup_log: false}
+
+    # The watcher exists only to push reloads to the editor; with the editor off,
+    # nothing is listening for them.
+    if editor? do
+      [Events, {Watcher, dir: dir}, listener]
+    else
+      [listener]
+    end
   end
 end

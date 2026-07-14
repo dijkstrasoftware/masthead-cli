@@ -87,4 +87,79 @@ defmodule MastheadCli.ManifestTest do
       assert %{"legacy" => "kept"} = Manifest.effective_metadata(m, %{"legacy" => "kept"})
     end
   end
+
+  describe "object/list tokens (tokens and metadata share one type set)" do
+    setup do
+      {:ok, manifest} =
+        Manifest.parse(~s({
+          "name":"X","slug":"x","version":"1.0.0",
+          "tokens":[
+            {"key":"hero","label":"Hero","type":"object","fields":[
+              {"key":"title","label":"T","type":"string","default":"Default title"},
+              {"key":"boxed","label":"B","type":"boolean","default":true}]},
+            {"key":"links","label":"Links","type":"list","item_label":"Link",
+             "default":[{"label":"Home"}],
+             "fields":[
+               {"key":"label","label":"L","type":"string","default":""},
+               {"key":"url","label":"U","type":"url","default":"/"}]}
+          ]
+        }))
+
+      {:ok, manifest: manifest}
+    end
+
+    test "a token can declare a container, with its nested fields", %{manifest: m} do
+      assert [hero, links] = m.tokens
+      assert hero.type == "object"
+      assert [%{key: "title"}, %{key: "boxed"}] = hero.fields
+      assert links.type == "list"
+      assert links.item_label == "Link"
+    end
+
+    test "effective_tokens merges containers against their nested schema", %{manifest: m} do
+      # No overrides: the object fills its nested defaults, the list renders the
+      # default items it declares.
+      assert %{"hero" => %{"title" => "Default title", "boxed" => true}, "links" => links} =
+               Manifest.effective_tokens(m, %{})
+
+      assert links == [%{"label" => "Home", "url" => "/"}]
+
+      tokens =
+        Manifest.effective_tokens(m, %{
+          "hero" => %{"title" => "Custom", "boxed" => "false"},
+          "links" => [%{"label" => "Docs", "url" => "/docs"}, %{"label" => "Blog"}]
+        })
+
+      assert tokens["hero"] == %{"title" => "Custom", "boxed" => false}
+
+      # Every item is merged against the schema, so an unset subkey arrives with
+      # its default rather than as a blank.
+      assert tokens["links"] == [
+               %{"label" => "Docs", "url" => "/docs"},
+               %{"label" => "Blog", "url" => "/"}
+             ]
+
+      # A stored empty list is a deliberate "no items", not "unset".
+      assert Manifest.effective_tokens(m, %{"links" => []})["links"] == []
+    end
+
+    test "a container token needs fields, and cannot nest another container" do
+      assert {:error, errs} =
+               Manifest.parse(
+                 ~s({"name":"X","slug":"x","version":"1.0.0",) <>
+                   ~s("tokens":[{"key":"hero","label":"H","type":"object"}]})
+               )
+
+      assert Enum.any?(errs, &String.contains?(&1, "tokens[0].fields"))
+
+      assert {:error, errs} =
+               Manifest.parse(
+                 ~s({"name":"X","slug":"x","version":"1.0.0",) <>
+                   ~s("tokens":[{"key":"hero","label":"H","type":"object","fields":[) <>
+                   ~s({"key":"inner","label":"I","type":"list","fields":[]}]}]})
+               )
+
+      assert Enum.any?(errs, &String.contains?(&1, "tokens[0].fields[0].type"))
+    end
+  end
 end

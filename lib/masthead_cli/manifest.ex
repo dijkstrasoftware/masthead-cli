@@ -11,9 +11,15 @@ defmodule MastheadCli.Manifest do
     * `file`   — a picker over the site's uploads; in production the stored
       value is the upload **id**, resolved to a URL at render time. In the CLI
       preview there are no uploads, so the value is used directly as a path/URL.
-    * `text` / `url` — extra scalar inputs available to page metadata.
-    * `object` / `list` — container fields (page metadata only): a group, or a
-      repeatable group, of nested scalar fields (one level deep).
+    * `text` / `url` — extra scalar inputs.
+    * `object` / `list` — container fields: a group, or a repeatable group, of
+      nested scalar fields (one level deep).
+
+  Tokens and page metadata share one type set: anything a metadata field can
+  declare, a token can declare too. The only difference is what the value is
+  *for* — a scalar token also becomes a CSS custom property (`--accent`), while
+  `object`/`list` tokens are template-only (they have no CSS representation, so
+  the renderer skips them when composing the `:root` block).
 
   Per-page settings live in sidecar `templates/pages/<name>.json` files,
   parsed by `parse_page_config/1`.
@@ -37,14 +43,8 @@ defmodule MastheadCli.Manifest do
     metadata: []
   ]
 
-  @type token :: %{
-          key: String.t(),
-          label: String.t(),
-          type: String.t(),
-          default: String.t() | boolean(),
-          options: [String.t()] | nil,
-          category: String.t() | nil
-        }
+  # A token *is* a field — same declaration, same types, same validator.
+  @type token :: metadata_field()
 
   @type metadata_field :: %{
           key: String.t(),
@@ -103,8 +103,8 @@ defmodule MastheadCli.Manifest do
           version: map["version"],
           author: map["author"],
           description: map["description"],
-          tokens: normalize_tokens(Map.get(map, "tokens", [])),
-          metadata: normalize_metadata(Map.get(map, "metadata", []))
+          tokens: normalize_fields(Map.get(map, "tokens", [])),
+          metadata: normalize_fields(Map.get(map, "metadata", []))
         }
 
         {:ok, manifest}
@@ -115,27 +115,26 @@ defmodule MastheadCli.Manifest do
   end
 
   @doc """
-  Merge of token defaults with per-site overrides. Unknown keys dropped; values
-  are strings (interpolated into CSS) except `boolean` tokens, coerced to real
-  booleans for template branching.
+  Merge of token defaults with per-site overrides.
+
+  Tokens use the same field types (and the same coercion) as metadata, so an
+  `object` token merges against its nested defaults and a `list` token comes
+  back as a list of merged maps. Unknown override keys are dropped (a token is
+  inert without a declaration), and a blank scalar override falls back to the
+  manifest default.
   """
-  @spec effective_tokens(t(), map()) :: %{String.t() => String.t() | boolean()}
+  @spec effective_tokens(t(), map()) :: %{String.t() => term()}
   def effective_tokens(%__MODULE__{tokens: tokens}, overrides) when is_map(overrides) do
-    Enum.reduce(tokens, %{}, fn %{key: key, type: type, default: default}, acc ->
-      raw =
-        case Map.get(overrides, key) do
-          v when is_binary(v) and v != "" -> v
-          _ -> default
+    Enum.reduce(tokens, %{}, fn field, acc ->
+      value =
+        case Map.get(overrides, field.key) do
+          v when v in [nil, ""] -> default_value(field)
+          v -> merge_value(field, v)
         end
 
-      Map.put(acc, key, coerce_token_value(type, raw))
+      Map.put(acc, field.key, value)
     end)
   end
-
-  defp coerce_token_value("boolean", v) when is_boolean(v), do: v
-  defp coerce_token_value("boolean", v) when v in ["true", "on", "1", 1], do: true
-  defp coerce_token_value("boolean", _), do: false
-  defp coerce_token_value(_type, v), do: v
 
   @doc "Merge of global metadata defaults with per-page overrides."
   @spec effective_metadata(t(), map()) :: %{String.t() => term()}
@@ -234,7 +233,7 @@ defmodule MastheadCli.Manifest do
          %{
            label: map["label"],
            description: map["description"],
-           metadata: normalize_metadata(Map.get(map, "metadata", []))
+           metadata: normalize_fields(Map.get(map, "metadata", []))
          }}
 
       errs ->
@@ -303,25 +302,12 @@ defmodule MastheadCli.Manifest do
         list
         |> Enum.with_index()
         |> Enum.reduce(errors, fn {tok, idx}, acc ->
-          validate_field(acc, tok, "tokens[#{idx}]", false)
+          validate_field(acc, tok, "tokens[#{idx}]")
         end)
 
       _ ->
         ["tokens: must be a list" | errors]
     end
-  end
-
-  defp normalize_tokens(list) when is_list(list) do
-    Enum.map(list, fn tok ->
-      %{
-        key: tok["key"],
-        label: tok["label"],
-        type: tok["type"],
-        default: tok["default"],
-        options: tok["options"],
-        category: tok["category"]
-      }
-    end)
   end
 
   defp validate_metadata(errors, map) do
@@ -410,7 +396,8 @@ defmodule MastheadCli.Manifest do
     end
   end
 
-  defp normalize_metadata(list) when is_list(list) do
+  # One normalizer for tokens, metadata and page-config fields.
+  defp normalize_fields(list) when is_list(list) do
     Enum.map(list, fn field ->
       %{
         key: field["key"],
@@ -426,6 +413,6 @@ defmodule MastheadCli.Manifest do
     end)
   end
 
-  defp normalize_nested(list) when is_list(list), do: normalize_metadata(list)
+  defp normalize_nested(list) when is_list(list), do: normalize_fields(list)
   defp normalize_nested(_), do: nil
 end

@@ -168,4 +168,98 @@ defmodule MastheadCli.RendererTest do
     refute html =~ "<script>evil"
     refute html =~ "</style><script>"
   end
+
+  describe "tags" do
+    setup do
+      posts = [post("Doom config", "doom", ["Emacs"]), post("Off topic", "off-topic", [])]
+      {:ok, posts: posts, tags: [%{name: "Emacs", slug: "emacs"}]}
+    end
+
+    test "tags and current_tag reach the template", %{site: site, posts: posts, tags: tags} do
+      {dir, theme} =
+        FixtureTheme.load!(%{
+          "templates/index.liquid" =>
+            ~s(<ul>{% for t in tags %}<li data-active="{{ t.active }}">{{ t.name }}</li>{% endfor %}</ul>) <>
+              ~s(<p>{{ current_tag.slug }}</p>)
+        })
+
+      on_exit(fn -> File.rm_rf!(dir) end)
+
+      html =
+        Renderer.render_index(theme, %{
+          site: site,
+          posts: posts,
+          pages: [],
+          tags: tags,
+          current_tag: %{name: "Emacs", slug: "emacs"}
+        })
+
+      assert html =~ ~s(<li data-active="true">Emacs</li>)
+      assert html =~ "<p>emacs</p>"
+    end
+
+    test "posts_by_tag and where_tag both select the tagged posts", %{
+      site: site,
+      posts: posts,
+      tags: tags
+    } do
+      {dir, theme} =
+        FixtureTheme.load!(%{
+          "templates/index.liquid" => """
+          {% assign tagged = posts_by_tag["emacs"] %}
+          <ul>{% for p in tagged %}<li>BY_TAG {{ p.title }}</li>{% endfor %}</ul>
+          {% assign filtered = posts | where_tag: "emacs" %}
+          <ul>{% for p in filtered %}<li>FILTER {{ p.title }}</li>{% endfor %}</ul>
+          """
+        })
+
+      on_exit(fn -> File.rm_rf!(dir) end)
+
+      html =
+        Renderer.render_index(theme, %{
+          site: site,
+          posts: posts,
+          all_posts: posts,
+          pages: [],
+          tags: tags
+        })
+
+      assert html =~ "BY_TAG Doom config"
+      refute html =~ "BY_TAG Off topic"
+      assert html =~ "FILTER Doom config"
+      refute html =~ "FILTER Off topic"
+    end
+  end
+
+  test "search exposes the query and the match count", %{site: site} do
+    {dir, theme} =
+      FixtureTheme.load!(%{
+        "templates/index.liquid" =>
+          ~s(<p>{{ search_query }} / {{ search_count }}</p>) <>
+            ~s({% unless search_query %}<p>no query</p>{% endunless %})
+      })
+
+    on_exit(fn -> File.rm_rf!(dir) end)
+
+    hit = post("Doom config", "doom", [])
+    html = Renderer.render_search(theme, %{site: site, posts: [hit], pages: [], query: "doom"})
+    assert html =~ "<p>doom / 1</p>"
+
+    # A blank query normalises to nil — an empty string is truthy in Liquid, so a
+    # theme could never branch on it otherwise.
+    blank = Renderer.render_search(theme, %{site: site, posts: [], pages: [], query: "  "})
+    assert blank =~ "no query"
+  end
+
+  defp post(title, slug, tags) do
+    %{
+      title: title,
+      slug: slug,
+      excerpt: "",
+      format: "markdown",
+      body: "",
+      published_at: ~U[2026-01-02 10:00:00Z],
+      tags: Enum.map(tags, &%{name: &1, slug: String.downcase(&1)})
+    }
+  end
 end

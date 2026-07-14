@@ -2,8 +2,8 @@ defmodule MastheadCli.CLI do
   @moduledoc """
   Command-line entrypoint for the `masthead` escript.
 
-      masthead create NAME                       Scaffold a new theme
-      masthead preview [--dir PATH] [--port N]   Serve a live preview
+      masthead new NAME                          Scaffold a new theme
+      masthead preview [--dir PATH] [--port N]   Serve a live preview + editor
       masthead validate [--dir PATH]             Check a theme without serving
       masthead package [--dir PATH] [--out P]    Bundle the theme into a zip
       masthead doctor                            Check the runtime versions
@@ -20,7 +20,7 @@ defmodule MastheadCli.CLI do
 
   def main(argv) do
     case argv do
-      ["create" | rest] -> create(rest)
+      ["new" | rest] -> new_theme(rest)
       ["preview" | rest] -> preview(rest)
       ["validate" | rest] -> validate(rest)
       ["package" | rest] -> package(rest)
@@ -35,17 +35,17 @@ defmodule MastheadCli.CLI do
     end
   end
 
-  # ---- create ----
+  # ---- new ----
 
   # Clone the starter theme into a new directory. The positional NAME (or
   # --dir) is the directory to create; its basename seeds the slug, and a
   # title-cased version of that becomes the theme name.
-  defp create(args) do
+  defp new_theme(args) do
     {opts, rest} = parse(args)
     target = List.first(rest) || opts[:dir]
 
     if is_nil(target) do
-      IO.puts(:stderr, "Usage: masthead create NAME    (e.g. masthead create my-theme)")
+      IO.puts(:stderr, "Usage: masthead new NAME    (e.g. masthead new my-theme)")
       System.halt(1)
     end
 
@@ -54,7 +54,12 @@ defmodule MastheadCli.CLI do
 
     if slug == "" do
       IO.puts(:stderr, "Could not derive a theme slug from #{inspect(Path.basename(dir))}.")
-      IO.puts(:stderr, "Pick a name with lowercase letters or digits, e.g. masthead create my-theme.")
+
+      IO.puts(
+        :stderr,
+        "Pick a name with lowercase letters or digits, e.g. masthead new my-theme."
+      )
+
       System.halt(1)
     end
 
@@ -91,7 +96,7 @@ defmodule MastheadCli.CLI do
     {opts, _rest} = parse(args)
     dir = Path.expand(opts[:dir] || ".")
     port = opts[:port] || 4010
-    inspector? = !opts[:no_inspector]
+    editor? = !opts[:no_editor]
 
     # Start the preview on a clean screen.
     MastheadCli.Term.clear()
@@ -110,17 +115,18 @@ defmodule MastheadCli.CLI do
       {:error, reason} ->
         IO.puts(:stderr, "Warning — the theme has problems (shown in the browser too):\n")
         IO.puts(:stderr, format_load_error(dir, reason) <> "\n")
-        start_server(dir, port, inspector?)
+        start_server(dir, port, editor?)
 
       {:ok, _theme} ->
-        start_server(dir, port, inspector?)
+        start_server(dir, port, editor?)
     end
   end
 
-  defp start_server(dir, port, inspector?) do
-    print_banner(dir, port, inspector?)
+  defp start_server(dir, port, editor?) do
+    ignored = if editor?, do: MastheadCli.Preview.Settings.ensure_gitignored(dir), else: :present
+    print_banner(dir, port, editor?, ignored)
 
-    case MastheadCli.Server.serve(dir, port, inspector?) do
+    case MastheadCli.Server.serve(dir, port, editor?) do
       {:error, reason} ->
         IO.puts(:stderr, "\nCould not start the server on port #{port}: #{inspect(reason)}")
         IO.puts(:stderr, "Is something already listening there? Try --port <other>.")
@@ -131,9 +137,10 @@ defmodule MastheadCli.CLI do
     end
   end
 
-  defp print_banner(dir, port, inspector?) do
+  defp print_banner(dir, port, editor?, ignored) do
     bar = MastheadCli.Term.blue("▌")
     label = &MastheadCli.Term.dim/1
+    file = MastheadCli.Preview.Settings.filename()
 
     lines =
       [
@@ -142,10 +149,16 @@ defmodule MastheadCli.CLI do
         "#{bar} #{label.("theme:")}  #{dir}",
         "#{bar} #{label.("url:")}    #{MastheadCli.Term.blue("http://localhost:#{port}")}",
         "#{bar}",
-        "#{bar} #{label.("Templates, CSS, manifest and preview content reload on every request.")}"
+        "#{bar} #{label.("Templates, CSS, manifest and preview content reload by themselves.")}"
       ] ++
-        if inspector? do
-          ["#{bar} #{label.("Live token inspector:")} click the gear, or press ` / Cmd+Ctrl+E."]
+        if editor? do
+          [
+            "#{bar} #{label.("Settings sidebar: edit tokens and page settings; each change re-renders.")}",
+            "#{bar} #{label.("Values are preview-only — saved to #{file}, never uploaded.")}"
+          ] ++
+            if ignored == :added,
+              do: ["#{bar} #{label.("Added #{file} to .gitignore.")}"],
+              else: []
         else
           []
         end ++
@@ -197,12 +210,35 @@ defmodule MastheadCli.CLI do
     IO.puts("""
     #{MastheadCli.Term.blue("✓")} #{MastheadCli.Term.blue_bold(m.name)} #{label.("(#{m.slug}) v#{m.version}")}
 
-      #{label.("manifest")}   ok
-      #{label.("templates")}  ok (#{map_size(theme.templates)} parsed)
-      #{label.("css")}        #{byte_size(theme.css)} bytes
-      #{label.("tokens")}     #{length(m.tokens)} declared
-      #{label.("metadata")}   #{length(m.metadata)} field(s)
+      #{label.("manifest")}    ok
+      #{label.("templates")}   ok (#{map_size(theme.templates)} parsed)
+      #{label.("css")}         #{byte_size(theme.css)} bytes
+      #{label.("tokens")}      #{field_summary(m.tokens)}
+      #{label.("metadata")}    #{field_summary(m.metadata)}
+      #{label.("theme pages")} #{page_summary(theme)}
     """)
+  end
+
+  # "6 declared (1 object, 2 list)" — containers are worth calling out, since a
+  # theme that uses them needs a platform new enough to render them.
+  defp field_summary(fields) do
+    containers =
+      fields
+      |> Enum.filter(&(&1.type in ["object", "list"]))
+      |> Enum.frequencies_by(& &1.type)
+      |> Enum.map(fn {type, count} -> "#{count} #{type}" end)
+
+    case containers do
+      [] -> "#{length(fields)} declared"
+      list -> "#{length(fields)} declared (#{Enum.join(list, ", ")})"
+    end
+  end
+
+  defp page_summary(theme) do
+    case Map.keys(theme.page_templates) do
+      [] -> "none"
+      names -> "#{length(names)} (#{Enum.join(Enum.sort(names), ", ")})"
+    end
   end
 
   # ---- package ----
@@ -310,6 +346,11 @@ defmodule MastheadCli.CLI do
       Enum.map_join(errors, "\n", fn {name, msg} -> "  • templates/#{name}.liquid: #{msg}" end)
   end
 
+  defp format_load_error(_dir, {:page_config, name, errors}) do
+    "templates/pages/#{name}.json is invalid:\n" <>
+      Enum.map_join(errors, "\n", &("  • " <> &1))
+  end
+
   defp format_load_error(_dir, other), do: "Could not load theme: #{inspect(other)}"
 
   # Accepted --bump levels (matches MastheadCli.Packager).
@@ -323,7 +364,7 @@ defmodule MastheadCli.CLI do
         strict: [
           dir: :string,
           port: :integer,
-          no_inspector: :boolean,
+          no_editor: :boolean,
           out: :string,
           bump: :string
         ],
@@ -380,7 +421,7 @@ defmodule MastheadCli.CLI do
     masthead #{@version} — local preview for Masthead themes
 
     USAGE
-      masthead create NAME           Scaffold a new theme from the template
+      masthead new NAME              Scaffold a new theme from the template
       masthead preview [options]     Serve a live preview of the theme
       masthead validate [options]    Validate the theme and exit
       masthead package [options]     Bundle the theme into an installable zip
@@ -391,14 +432,14 @@ defmodule MastheadCli.CLI do
     OPTIONS
       -d, --dir PATH    Theme directory (default: current directory)
       -p, --port N      Port for `preview` (default: 4010)
-      --no-inspector    Disable the live token inspector overlay
+      --no-editor       Serve the theme bare, without the settings sidebar
       -o, --out PATH    Output for `package`: a .zip file path or a directory
                         (default: ~/Desktop/<slug>-<version>.zip)
       --bump [LEVEL]    Bump manifest.json's version before packaging:
                         major | minor | bugfix (bare --bump = bugfix)
 
     EXAMPLES
-      masthead create my-theme               # scaffold a new theme directory
+      masthead new my-theme                  # scaffold a new theme directory
       cd my-theme && masthead preview
       masthead preview --dir ~/themes/acme --port 4020
       masthead validate

@@ -1,6 +1,6 @@
 defmodule MastheadCli.Scaffold do
   @moduledoc """
-  Backs `masthead create`: clones the official starter theme and turns it
+  Backs `masthead new`: clones the official starter theme and turns it
   into a fresh, independent project.
 
   The template lives in its own repo so it can evolve (and be previewed)
@@ -104,9 +104,14 @@ defmodule MastheadCli.Scaffold do
   end
 
   defp put_field(json, field, value) do
-    Regex.replace(~r/"#{field}"\s*:\s*"[^"]*"/, json, fn _ ->
-      ~s("#{field}": #{Jason.encode!(value)})
-    end, global: false)
+    Regex.replace(
+      ~r/"#{field}"\s*:\s*"[^"]*"/,
+      json,
+      fn _ ->
+        ~s("#{field}": #{Jason.encode!(value)})
+      end,
+      global: false
+    )
   end
 
   defp empty_dir?(dir) do

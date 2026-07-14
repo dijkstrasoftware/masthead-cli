@@ -12,7 +12,7 @@ defmodule MastheadCli.Packager do
       assets/…            (only whitelisted extensions, no symlinks)
 
   Dev-only files are deliberately excluded: `preview/`, `preview.json`,
-  `README.md`, `.git`, `.DS_Store`, any stray `*.zip`, etc. The theme is
+  `preview.local.json`, `README.md`, `.git`, `.DS_Store`, any stray `*.zip`, etc. The theme is
   validated first (manifest + all templates + page configs parse) so we never
   ship a broken bundle, and the platform's upload caps are checked so you find
   out here rather than at upload time.
