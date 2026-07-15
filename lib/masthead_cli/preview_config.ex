@@ -9,6 +9,8 @@ defmodule MastheadCli.PreviewConfig do
 
       preview.json              site fields + token overrides (+ optional
                                 inline posts/pages arrays)
+      preview.local.json        the settings sidebar's scratchpad — layered on
+                                top of preview.json (see `Preview.Settings`)
       preview/posts/*.md        one post per file, JSON front matter + body
       preview/pages/*.md        one page per file, JSON front matter + body
 
@@ -43,24 +45,38 @@ defmodule MastheadCli.PreviewConfig do
   """
 
   alias MastheadCli.Content.Fixtures
+  alias MastheadCli.Preview.Settings
 
-  @doc "Load the resolved `%{site, posts, pages}` dataset for `dir`."
+  @doc """
+  Load the resolved `%{site, posts, pages, tags}` dataset for `dir`.
+
+  `preview.json` (plus any `preview/posts|pages/*.md`) is the seed; the sidebar's
+  `preview.local.json` is layered on top of it — a token key it sets wins over
+  the seed's, and a page's stored metadata keys win over that page's seeded
+  metadata. `tags` is derived from the tags the preview posts carry.
+  """
   def load(dir) do
     json = read_json(dir)
+    settings = Settings.load(dir)
+    posts = load_posts(dir, json)
 
     %{
-      site: build_site(json),
-      posts: load_posts(dir, json),
-      pages: load_pages(dir, json)
+      site: build_site(json, settings),
+      posts: posts,
+      pages: dir |> load_pages(json) |> apply_page_settings(settings),
+      tags: collect_tags(posts)
     }
   end
 
   # ---- site ----
 
-  defp build_site(json) do
+  defp build_site(json, settings) do
     base = Fixtures.default_site()
     site = Map.get(json, "site", %{})
-    tokens = Map.get(json, "tokens", %{})
+
+    # Structure-preserving: an `object` token's value is a map and a `list`
+    # token's is a list of maps, so nothing here may flatten to strings.
+    tokens = Map.merge(stringify_keys(Map.get(json, "tokens", %{})), settings.tokens)
 
     base
     |> maybe_put(site, "name", :name)
@@ -69,7 +85,29 @@ defmodule MastheadCli.PreviewConfig do
     |> maybe_put(site, "slug", :slug)
     |> maybe_put(site, "css_overrides", :css_overrides)
     |> maybe_put(site, "homepage", :homepage_slug)
-    |> Map.put(:theme_tokens, stringify(tokens))
+    |> Map.put(:theme_tokens, tokens)
+  end
+
+  # The sidebar's per-page metadata overrides win, key by key, over whatever the
+  # page was seeded with.
+  defp apply_page_settings(pages, settings) do
+    Enum.map(pages, fn page ->
+      case Settings.page_metadata(settings, page.slug) do
+        overrides when map_size(overrides) == 0 ->
+          page
+
+        overrides ->
+          Map.put(page, :metadata, Map.merge(page.metadata || %{}, overrides))
+      end
+    end)
+  end
+
+  # The site's tag list: every tag its posts carry, de-duplicated, by name.
+  defp collect_tags(posts) do
+    posts
+    |> Enum.flat_map(&(&1.tags || []))
+    |> Enum.uniq_by(& &1.slug)
+    |> Enum.sort_by(& &1.name)
   end
 
   defp maybe_put(acc, source, src_key, dest_key) do
@@ -149,15 +187,35 @@ defmodule MastheadCli.PreviewConfig do
       excerpt: m["excerpt"] || "",
       format: m["format"] || "markdown",
       published_at: parse_datetime(m["published_at"]),
+      tags: normalize_tags(m["tags"]),
       body: m["body"] || ""
     }
   end
+
+  # `"tags": ["Emacs", "Elixir"]` — names, slugged the way the platform slugs
+  # them. A `{"name":…, "slug":…}` object is accepted too.
+  defp normalize_tags(list) when is_list(list) do
+    Enum.flat_map(list, fn
+      name when is_binary(name) ->
+        [%{name: name, slug: slugify(name)}]
+
+      %{"name" => name} = t when is_binary(name) ->
+        [%{name: name, slug: t["slug"] || slugify(name)}]
+
+      _ ->
+        []
+    end)
+  end
+
+  defp normalize_tags(_), do: []
 
   defp normalize_page(m) do
     %{
       title: m["title"],
       slug: m["slug"],
       format: m["format"] || "markdown",
+      # For `"format": "theme"` pages: which templates/pages/<template>.liquid.
+      template: m["template"],
       show_in_nav: Map.get(m, "show_in_nav", true),
       metadata: m["metadata"] || %{},
       body: m["body"] || ""
@@ -238,9 +296,13 @@ defmodule MastheadCli.PreviewConfig do
     end
   end
 
-  defp stringify(map) when is_map(map) do
-    Map.new(map, fn {k, v} -> {to_string(k), to_string(v)} end)
+  # Keys become strings (they're token keys); values are left exactly as the
+  # author wrote them, so nested objects and lists survive.
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), v} end)
   end
+
+  defp stringify_keys(_), do: %{}
 
   defp slugify(name) do
     name

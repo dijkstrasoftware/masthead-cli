@@ -7,19 +7,18 @@ defmodule MastheadCli.Packager do
 
       manifest.json
       theme.css
-      templates/{layout,index,post,page,blog,not_found}.liquid
+      templates/{layout,index,post,page,not_found}.liquid
+      templates/pages/*.liquid + *.json   (theme pages + their settings)
       assets/…            (only whitelisted extensions, no symlinks)
 
   Dev-only files are deliberately excluded: `preview/`, `preview.json`,
-  `README.md`, `.git`, `.DS_Store`, any stray `*.zip`, etc. The theme is
-  validated first (manifest + all six templates parse) so we never ship a
-  broken bundle, and the platform's upload caps are checked so you find out
-  here rather than at upload time.
+  `preview.local.json`, `README.md`, `.git`, `.DS_Store`, any stray `*.zip`, etc. The theme is
+  validated first (manifest + all templates + page configs parse) so we never
+  ship a broken bundle, and the platform's upload caps are checked so you find
+  out here rather than at upload time.
   """
 
   alias MastheadCli.Theme
-
-  @required_templates ~w(layout index post page blog not_found)
 
   # Mirrors Masthead.Themes.Package's asset extension whitelist and caps.
   @asset_exts ~w(.css .png .jpg .jpeg .gif .webp .svg .woff .woff2 .ttf .otf .ico .json)
@@ -153,6 +152,11 @@ defmodule MastheadCli.Packager do
       "Template problems — fix before packaging:\n" <>
         Enum.map_join(errors, "\n", fn {name, msg} -> "  • templates/#{name}.liquid: #{msg}" end)
 
+  defp format_load_error(_dir, {:page_config, name, errors}),
+    do:
+      "templates/pages/#{name}.json is invalid:\n" <>
+        Enum.map_join(errors, "\n", &("  • " <> &1))
+
   defp format_load_error(_dir, other), do: "Could not load theme: #{inspect(other)}"
 
   # ---- file collection ----
@@ -167,11 +171,17 @@ defmodule MastheadCli.Packager do
         {[], ["theme.css is missing — the platform requires it"]}
       end
 
+    # Every Liquid template (fixed + optional blog + pages/) plus the page
+    # sidecar configs under templates/pages/. Theme.load already validated they
+    # parse, so reading them here is safe.
     templates =
-      Enum.map(@required_templates, fn name ->
-        rel = "templates/#{name}.liquid"
-        {rel, File.read!(Path.join(dir, rel))}
-      end)
+      Path.join([dir, "templates"])
+      |> Path.join("**/*")
+      |> Path.wildcard()
+      |> Enum.reject(&File.dir?/1)
+      |> Enum.filter(&(Path.extname(&1) in [".liquid", ".json"]))
+      |> Enum.sort()
+      |> Enum.map(fn path -> {Path.relative_to(path, dir), File.read!(path)} end)
 
     {assets, skipped} = collect_assets(dir)
 

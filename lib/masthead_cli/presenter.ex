@@ -34,15 +34,33 @@ defmodule MastheadCli.Presenter do
       "slug" => p.slug,
       "excerpt" => Map.get(p, :excerpt, ""),
       "published_at" => Map.get(p, :published_at),
-      "url" => "/posts/" <> p.slug
+      "url" => "/posts/" <> p.slug,
+      "tags" => Enum.map(Map.get(p, :tags) || [], &%{"name" => &1.name, "slug" => &1.slug})
     }
   end
+
+  @doc """
+  Project the site's tag list, marking the one currently being filtered on.
+  Mind the asymmetry production also has: entries here carry an `active` flag,
+  while `current_tag` (see `tag/1`) does not.
+  """
+  def tags(list, current_slug \\ nil) when is_list(list) do
+    Enum.map(list, fn t ->
+      %{"name" => t.name, "slug" => t.slug, "active" => t.slug == current_slug}
+    end)
+  end
+
+  @doc "Project the tag currently being filtered on, or nil."
+  def tag(nil), do: nil
+  def tag(t), do: %{"name" => t.name, "slug" => t.slug}
 
   def page(pg) do
     %{
       "title" => pg.title,
       "slug" => pg.slug,
       "format" => pg.format,
+      # For theme pages: the chosen templates/pages/<template>.liquid name.
+      "template" => Map.get(pg, :template),
       "url" => "/" <> pg.slug,
       # Raw override map. The Renderer merges manifest defaults on top of
       # this before exposing it to templates.
