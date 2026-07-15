@@ -30,21 +30,25 @@ template that previews correctly here renders the same way in production.
 ### Homebrew (recommended)
 
 ```sh
-brew install joeridijkstra/tap/masthead
+brew install dijkstrasoftware/tap/masthead
 ```
 
 To track the latest `main` instead of the newest release:
 
 ```sh
-brew install --HEAD joeridijkstra/tap/masthead
+brew install --HEAD dijkstrasoftware/tap/masthead
 ```
+
+The formula lives in the
+[dijkstrasoftware/homebrew-tap](https://github.com/dijkstrasoftware/homebrew-tap)
+repository.
 
 ### From source
 
 Requires Elixir (`~> 1.15`; developed on 1.18 / OTP 28).
 
 ```sh
-git clone https://github.com/JoeriDijkstra/masthead-cli ~/personal/masthead_cli
+git clone https://github.com/dijkstrasoftware/masthead-cli ~/personal/masthead_cli
 cd ~/personal/masthead_cli
 mix deps.get
 mix escript.build          # produces ./masthead
@@ -170,7 +174,7 @@ Scalar tokens also become CSS custom properties (`--accent`); `object` and
 ## Creating a theme
 
 `masthead new NAME` scaffolds a theme in a `NAME/` directory by cloning the
-[theme template](https://github.com/JoeriDijkstra/masthead-template) — a
+[theme template](https://github.com/dijkstrasoftware/masthead-template) — a
 complete, valid starter with a theme page and example `object`/`list` tokens.
 The template's git history is removed so you start clean, and the manifest's
 `name`/`slug` are set from `NAME`:

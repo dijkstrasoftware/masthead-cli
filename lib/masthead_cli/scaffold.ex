@@ -9,7 +9,7 @@ defmodule MastheadCli.Scaffold do
   manifest's `name`/`slug` to match what the author asked for.
   """
 
-  @template_repo "https://github.com/JoeriDijkstra/masthead-template.git"
+  @template_repo "https://github.com/dijkstrasoftware/masthead-template.git"
 
   @doc "The git URL of the template that `create/3` clones."
   def template_repo, do: @template_repo
