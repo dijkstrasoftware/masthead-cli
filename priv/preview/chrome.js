@@ -10,7 +10,6 @@
   var view = document.getElementById("mh-view");
   var body = document.getElementById("mh-body");
   var pathLabel = document.getElementById("mh-path");
-  var openLink = document.getElementById("mh-open");
   var status = document.getElementById("mh-status");
   var fileLabel = document.getElementById("mh-file");
   var resetBtn = document.getElementById("mh-reset");
@@ -21,6 +20,7 @@
   var metadata = null; // current page's metadata values, or null
   var saveTimer = null;
   var itemSeq = 0;
+  var openGroups = {}; // category accordion open-state, kept across rerenders
 
   // ---- server round-trip -------------------------------------------------
 
@@ -131,13 +131,12 @@
       body.appendChild(
         section("Theme tokens", fieldsNode(state.tokens.fields, tokens, function () {
           save();
-        }))
+        }, "tokens"))
       );
     }
 
     body.appendChild(pageSection());
     pathLabel.textContent = path;
-    openLink.href = path;
   }
 
   function section(title, node) {
@@ -191,7 +190,7 @@
     wrap.appendChild(
       fieldsNode(state.page.fields, metadata, function () {
         save();
-      })
+      }, "page")
     );
 
     return section("Page settings — " + state.page.label, wrap);
@@ -199,7 +198,7 @@
 
   // A field list, grouped into accordions when any field declares a category
   // (exactly how the platform's settings form groups them).
-  function fieldsNode(fields, values, onChange) {
+  function fieldsNode(fields, values, onChange, scope) {
     var wrap = el("div");
     var categorized = fields.some(function (f) {
       return f.category && f.category.trim() !== "";
@@ -226,7 +225,18 @@
 
     order.forEach(function (cat, index) {
       var details = el("details", "mh-group");
-      if (index === 0) details.open = true;
+
+      // Keep each group's open state across rerenders (adding a list item
+      // rebuilds the DOM), so editing a list doesn't collapse its category
+      // and throw you back to the first one. First group opens by default.
+      var groupKey = scope + ":" + cat;
+      var open = openGroups.hasOwnProperty(groupKey) ? openGroups[groupKey] : index === 0;
+      details.open = open;
+      openGroups[groupKey] = open;
+      details.addEventListener("toggle", function () {
+        openGroups[groupKey] = details.open;
+      });
+
       var summary = el("summary");
       summary.textContent = cat;
       details.appendChild(summary);

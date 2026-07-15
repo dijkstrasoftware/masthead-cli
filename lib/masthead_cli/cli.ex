@@ -25,6 +25,7 @@ defmodule MastheadCli.CLI do
       ["validate" | rest] -> validate(rest)
       ["package" | rest] -> package(rest)
       ["doctor" | _] -> doctor()
+      ["docs" | _] -> docs()
       ["version" | _] -> IO.puts("masthead #{@version}")
       ["--version" | _] -> IO.puts("masthead #{@version}")
       ["help" | _] -> IO.puts(usage())
@@ -330,6 +331,43 @@ defmodule MastheadCli.CLI do
     end
   end
 
+  # ---- docs ----
+
+  @docs_url "https://docs.masthead.site/posts/masthead-cli"
+
+  # Open the CLI documentation in the default browser.
+  defp docs do
+    label = &MastheadCli.Term.dim/1
+
+    case open_browser(@docs_url) do
+      :ok ->
+        IO.puts("#{MastheadCli.Term.blue_bold("masthead")} #{label.("docs")}")
+        IO.puts("  #{MastheadCli.Term.blue("↗")} Opened #{@docs_url}\n")
+
+      :error ->
+        IO.puts("#{MastheadCli.Term.blue_bold("masthead")} #{label.("docs")}")
+        IO.puts("  #{label.("Open this in your browser:")} #{@docs_url}\n")
+    end
+  end
+
+  # Hand a URL to the platform's default opener. Returns :ok when the command
+  # launched, :error otherwise (so we can fall back to just printing the URL).
+  defp open_browser(url) do
+    {cmd, args} =
+      case :os.type() do
+        {:win32, _} -> {"cmd", ["/c", "start", "", url]}
+        {:unix, :darwin} -> {"open", [url]}
+        {:unix, _} -> {"xdg-open", [url]}
+      end
+
+    case System.cmd(cmd, args, stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
   # ---- shared ----
 
   defp format_load_error(dir, {:missing, _message}) do
@@ -426,6 +464,7 @@ defmodule MastheadCli.CLI do
       masthead validate [options]    Validate the theme and exit
       masthead package [options]     Bundle the theme into an installable zip
       masthead doctor                Check the Erlang/Elixir runtime versions
+      masthead docs                  Open the CLI documentation in your browser
       masthead version               Print the version
       masthead help                  Show this help
 

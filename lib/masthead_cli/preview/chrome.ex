@@ -37,9 +37,8 @@ defmodule MastheadCli.Preview.Chrome do
     <body data-path="#{escape_attr(path)}">
       <main class="mh-frame">
         <div class="mh-toolbar">
-          <span class="mh-mark">masthead</span>
+          <a class="mh-mark" href="https://masthead.site" target="_blank" rel="noopener">masthead</a>
           <span class="mh-path" id="mh-path">#{escape(path)}</span>
-          <a class="mh-open" id="mh-open" href="#{escape_attr(path)}" target="_blank" rel="noopener">Open raw &#8599;</a>
         </div>
         <iframe id="mh-view" name="mh-view" title="Theme preview" src="#{escape_attr(path)}"></iframe>
       </main>

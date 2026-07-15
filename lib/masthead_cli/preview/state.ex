@@ -48,7 +48,7 @@ defmodule MastheadCli.Preview.State do
           slug: page.slug,
           title: page.title,
           format: page.format,
-          template: page.template,
+          template: Map.get(page, :template),
           label: page_label(theme, page),
           description: page_description(theme, page),
           fields: fields,
