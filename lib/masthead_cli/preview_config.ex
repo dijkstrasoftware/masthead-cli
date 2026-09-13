@@ -32,7 +32,7 @@ defmodule MastheadCli.PreviewConfig do
 
       ---
       { "title": "About", "slug": "about", "format": "markdown",
-        "metadata": { "layout": "wide" }, "show_in_nav": true }
+        "page_options": { "layout": "wide" }, "show_in_nav": true }
       ---
       ## About us
 
@@ -52,20 +52,45 @@ defmodule MastheadCli.PreviewConfig do
 
   `preview.json` (plus any `preview/posts|pages/*.md`) is the seed; the sidebar's
   `preview.local.json` is layered on top of it — a token key it sets wins over
-  the seed's, and a page's stored metadata keys win over that page's seeded
-  metadata. `tags` is derived from the tags the preview posts carry.
+  the seed's, and a page's or post's stored option keys win over its seeded
+  ones. `tags` is derived from the tags the preview posts carry.
   """
   def load(dir) do
     json = read_json(dir)
     settings = Settings.load(dir)
-    posts = load_posts(dir, json)
+
+    posts =
+      settings
+      |> authored(:posts, fn -> load_posts(dir, json) end)
+      |> apply_post_settings(settings)
+
+    pages =
+      settings
+      |> authored(:pages, fn -> load_pages(dir, json) end)
+      |> apply_page_settings(settings)
 
     %{
       site: build_site(json, settings),
       posts: posts,
-      pages: dir |> load_pages(json) |> apply_page_settings(settings),
+      pages: pages,
       tags: collect_tags(posts)
     }
+  end
+
+  # Content the sidebar authored owns the list outright — it was seeded from
+  # whatever this function would otherwise have returned.
+  defp authored(settings, :posts, seed) do
+    case Settings.content(settings, "posts") do
+      nil -> seed.()
+      items -> items |> Enum.map(&normalize_post/1) |> sort_posts()
+    end
+  end
+
+  defp authored(settings, :pages, seed) do
+    case Settings.content(settings, "pages") do
+      nil -> seed.()
+      items -> items |> Enum.map(&normalize_page/1) |> sort_pages()
+    end
   end
 
   # ---- site ----
@@ -88,19 +113,20 @@ defmodule MastheadCli.PreviewConfig do
     |> Map.put(:theme_tokens, tokens)
   end
 
-  # The sidebar's per-page metadata overrides win, key by key, over whatever the
-  # page was seeded with.
+  # The sidebar's per-page overrides win, key by key, over whatever the page was
+  # seeded with. Posts work the same way.
   defp apply_page_settings(pages, settings) do
-    Enum.map(pages, fn page ->
-      case Settings.page_metadata(settings, page.slug) do
-        overrides when map_size(overrides) == 0 ->
-          page
-
-        overrides ->
-          Map.put(page, :metadata, Map.merge(page.metadata || %{}, overrides))
-      end
-    end)
+    Enum.map(pages, &apply_overrides(&1, Settings.page_options(settings, &1.slug), :page_options))
   end
+
+  defp apply_post_settings(posts, settings) do
+    Enum.map(posts, &apply_overrides(&1, Settings.post_options(settings, &1.slug), :post_options))
+  end
+
+  defp apply_overrides(item, overrides, _key) when map_size(overrides) == 0, do: item
+
+  defp apply_overrides(item, overrides, key),
+    do: Map.put(item, key, Map.merge(Map.get(item, key) || %{}, overrides))
 
   # The site's tag list: every tag its posts carry, de-duplicated, by name.
   defp collect_tags(posts) do
@@ -188,6 +214,7 @@ defmodule MastheadCli.PreviewConfig do
       format: m["format"] || "markdown",
       published_at: parse_datetime(m["published_at"]),
       tags: normalize_tags(m["tags"]),
+      post_options: m["post_options"] || %{},
       body: m["body"] || ""
     }
   end
@@ -217,7 +244,7 @@ defmodule MastheadCli.PreviewConfig do
       # For `"format": "theme"` pages: which templates/pages/<template>.liquid.
       template: m["template"],
       show_in_nav: Map.get(m, "show_in_nav", true),
-      metadata: m["metadata"] || %{},
+      page_options: m["page_options"] || m["metadata"] || %{},
       body: m["body"] || ""
     }
   end

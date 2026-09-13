@@ -211,12 +211,14 @@ defmodule MastheadCli.CLI do
     IO.puts("""
     #{MastheadCli.Term.blue("✓")} #{MastheadCli.Term.blue_bold(m.name)} #{label.("(#{m.slug}) v#{m.version}")}
 
-      #{label.("manifest")}    ok
-      #{label.("templates")}   ok (#{map_size(theme.templates)} parsed)
-      #{label.("css")}         #{byte_size(theme.css)} bytes
-      #{label.("tokens")}      #{field_summary(m.tokens)}
-      #{label.("metadata")}    #{field_summary(m.metadata)}
-      #{label.("theme pages")} #{page_summary(theme)}
+      #{label.("manifest")}      ok
+      #{label.("renders as")}    #{m.render_version}
+      #{label.("templates")}     ok (#{map_size(theme.templates)} parsed)
+      #{label.("css")}           #{byte_size(theme.css)} bytes
+      #{label.("tokens")}        #{field_summary(m.tokens)}
+      #{label.("page options")}  #{field_summary(m.page_options)}
+      #{label.("post options")}  #{field_summary(m.post_options)}
+      #{label.("theme pages")}   #{page_summary(theme)}
     """)
   end
 

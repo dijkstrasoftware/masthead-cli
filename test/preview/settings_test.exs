@@ -31,10 +31,10 @@ defmodule MastheadCli.Preview.SettingsTest do
   end
 
   test "an absent (or unreadable) file reads as empty", %{dir: dir} do
-    assert Settings.load(dir) == %{tokens: %{}, pages: %{}}
+    assert Settings.load(dir) == %{tokens: %{}, pages: %{}, posts: %{}, content: %{}}
 
     File.write!(Settings.path(dir), "{ not json")
-    assert Settings.load(dir) == %{tokens: %{}, pages: %{}}
+    assert Settings.load(dir) == %{tokens: %{}, pages: %{}, posts: %{}, content: %{}}
   end
 
   test "tokens round-trip, canonicalized", %{dir: dir, fields: fields} do
@@ -58,12 +58,76 @@ defmodule MastheadCli.Preview.SettingsTest do
     assert tokens["links"] == [%{"label" => "Docs"}, %{}]
   end
 
-  test "a page's metadata is stored under its slug", %{dir: dir, fields: fields} do
-    Settings.put_page_metadata(dir, "home", %{"hero" => %{"title" => "Home"}}, fields)
+  test "a page's options are stored under its slug", %{dir: dir, fields: fields} do
+    Settings.put_page_options(dir, "home", %{"hero" => %{"title" => "Home"}}, fields)
     settings = Settings.load(dir)
 
-    assert Settings.page_metadata(settings, "home") == %{"hero" => %{"title" => "Home"}}
-    assert Settings.page_metadata(settings, "other") == %{}
+    assert Settings.page_options(settings, "home") == %{"hero" => %{"title" => "Home"}}
+    assert Settings.page_options(settings, "other") == %{}
+  end
+
+  test "a post's options are stored under its slug", %{dir: dir, fields: fields} do
+    Settings.put_post_options(dir, "hello", %{"hero" => %{"title" => "Post"}}, fields)
+    settings = Settings.load(dir)
+
+    assert Settings.post_options(settings, "hello") == %{"hero" => %{"title" => "Post"}}
+    assert Settings.post_options(settings, "other") == %{}
+    assert Settings.page_options(settings, "hello") == %{}
+  end
+
+  test "a file written before options were named still reads", %{dir: dir} do
+    File.write!(
+      Settings.path(dir),
+      ~s({"tokens":{},"pages":{"home":{"metadata":{"layout":"wide"}}}})
+    )
+
+    assert Settings.page_options(Settings.load(dir), "home") == %{"layout" => "wide"}
+  end
+
+  test "a blank scalar is not stored, so the theme's default still wins", %{dir: dir} do
+    fields = [
+      %{key: "subtitle", label: "S", type: "string", default: "Default", fields: nil},
+      %{key: "on", label: "O", type: "boolean", default: true, fields: nil}
+    ]
+
+    Settings.put_post_options(dir, "p", %{"subtitle" => "", "on" => false}, fields)
+
+    stored = Settings.post_options(Settings.load(dir), "p")
+    refute Map.has_key?(stored, "subtitle")
+    # `false` is a real value, not a blank one.
+    assert stored["on"] == false
+  end
+
+  test "removing an item drops the options it left behind", %{dir: dir} do
+    Settings.put_content(dir, "posts", [%{"title" => "A", "slug" => "a"}])
+    Settings.put_post_options(dir, "a", %{"subtitle" => "Set"}, [])
+    assert Settings.post_options(Settings.load(dir), "a") == %{"subtitle" => "Set"}
+
+    Settings.put_content(dir, "posts", [%{"title" => "B", "slug" => "b"}])
+    assert Settings.post_options(Settings.load(dir), "a") == %{}
+  end
+
+  test "sidebar-authored content replaces the seed, per kind", %{dir: dir} do
+    assert Settings.content(Settings.load(dir), "posts") == nil
+
+    Settings.put_content(dir, "posts", [%{"title" => "Only post", "slug" => "only"}])
+
+    settings = Settings.load(dir)
+    assert [%{"slug" => "only"}] = Settings.content(settings, "posts")
+    # Pages are untouched, so they still come from the seed.
+    assert Settings.content(settings, "pages") == nil
+
+    %{posts: posts, pages: pages} = PreviewConfig.load(dir)
+    assert Enum.map(posts, & &1.title) == ["Only post"]
+    assert length(pages) == 2
+  end
+
+  test "authored content keeps its option overrides", %{dir: dir} do
+    Settings.put_content(dir, "posts", [%{"title" => "P", "slug" => "p"}])
+    Settings.put_post_options(dir, "p", %{"subtitle" => "Set"}, [])
+
+    %{posts: [post]} = PreviewConfig.load(dir)
+    assert post.post_options == %{"subtitle" => "Set"}
   end
 
   test "reset removes the file, and is fine when there isn't one", %{dir: dir, fields: fields} do
@@ -97,7 +161,7 @@ defmodule MastheadCli.Preview.SettingsTest do
     File.write!(Path.join(dir, "preview.json"), preview_json)
 
     Settings.put_tokens(dir, %{"accent" => "#222222"}, fields)
-    Settings.put_page_metadata(dir, "home", %{"hero" => %{"title" => "Edited"}}, [])
+    Settings.put_page_options(dir, "home", %{"hero" => %{"title" => "Edited"}}, [])
 
     data = PreviewConfig.load(dir)
 
@@ -106,8 +170,8 @@ defmodule MastheadCli.Preview.SettingsTest do
     assert data.site.theme_tokens["hero"] == %{"title" => "Seeded hero"}
 
     page = Enum.find(data.pages, &(&1.slug == "home"))
-    assert page.metadata["hero"] == %{"title" => "Edited"}
-    assert page.metadata["layout"] == "wide"
+    assert page.page_options["hero"] == %{"title" => "Edited"}
+    assert page.page_options["layout"] == "wide"
 
     # The hand-authored seed is never touched.
     assert File.read!(Path.join(dir, "preview.json")) == preview_json
