@@ -139,6 +139,77 @@ body {
   margin: 0;
 }
 
+/* ---- tabs ---- */
+
+.mh-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--mh-line);
+  margin: 16px 0 0;
+}
+
+.mh-tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--mh-muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 10px;
+  margin-bottom: -1px;
+}
+
+.mh-tab:hover {
+  color: var(--mh-text);
+}
+
+.mh-tab-on {
+  color: var(--mh-text);
+  border-bottom-color: var(--mh-accent);
+}
+
+.mh-subtitle {
+  margin: 0 0 10px;
+  color: var(--mh-muted);
+}
+
+/* ---- content editor ---- */
+
+.mh-content {
+  margin-bottom: 18px;
+}
+
+.mh-content-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.mh-content-head h3 {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+  color: var(--mh-muted);
+}
+
+.mh-add {
+  appearance: none;
+  background: var(--mh-field);
+  border: 1px solid var(--mh-line);
+  border-radius: 6px;
+  color: var(--mh-text);
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 8px;
+}
+
+.mh-add:hover {
+  border-color: var(--mh-accent);
+}
+
 .mh-group {
   border: 1px solid var(--mh-line);
   border-radius: 8px;

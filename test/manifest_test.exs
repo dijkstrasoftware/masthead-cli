@@ -5,7 +5,7 @@ defmodule MastheadCli.ManifestTest do
 
   describe "parse/1" do
     test "parses a valid manifest" do
-      json = ~s({"name":"X","slug":"x","version":"1.0.0","tokens":[],"metadata":[]})
+      json = ~s({"name":"X","slug":"x","version":"1.0.0","tokens":[],"page_options":[]})
       assert {:ok, %Manifest{name: "X", slug: "x", version: "1.0.0"}} = Manifest.parse(json)
     end
 
@@ -62,14 +62,14 @@ defmodule MastheadCli.ManifestTest do
     end
   end
 
-  describe "effective_metadata/2" do
+  describe "page option defaults and coercion" do
     setup do
       {:ok, m} =
         Manifest.from_map(%{
           "name" => "X",
           "slug" => "x",
           "version" => "1.0.0",
-          "metadata" => [
+          "page_options" => [
             %{"key" => "show", "label" => "Show", "type" => "boolean", "default" => true},
             %{"key" => "n", "label" => "N", "type" => "number", "default" => 3}
           ]
@@ -80,15 +80,15 @@ defmodule MastheadCli.ManifestTest do
 
     test "coerces declared types", %{manifest: m} do
       assert %{"show" => false, "n" => 7} =
-               Manifest.effective_metadata(m, %{"show" => "false", "n" => "7"})
+               Manifest.merge_fields(m.page_options, %{"show" => "false", "n" => "7"})
     end
 
     test "preserves unknown keys (theme-switch resilience)", %{manifest: m} do
-      assert %{"legacy" => "kept"} = Manifest.effective_metadata(m, %{"legacy" => "kept"})
+      assert %{"legacy" => "kept"} = Manifest.merge_fields(m.page_options, %{"legacy" => "kept"})
     end
   end
 
-  describe "object/list tokens (tokens and metadata share one type set)" do
+  describe "object/list tokens (tokens and options share one type set)" do
     setup do
       {:ok, manifest} =
         Manifest.parse(~s({
@@ -160,6 +160,60 @@ defmodule MastheadCli.ManifestTest do
                )
 
       assert Enum.any?(errs, &String.contains?(&1, "tokens[0].fields[0].type"))
+    end
+  end
+
+  describe "render_version and options" do
+    test "defaults to beta, and a legacy metadata key parses into page_options" do
+      json =
+        ~s({"name":"X","slug":"x","version":"1.0.0","tokens":[],) <>
+          ~s("metadata":[{"key":"layout","label":"L","type":"string","default":"a"}]})
+
+      assert {:ok, m} = Manifest.parse(json)
+      assert m.render_version == "beta"
+      assert [%{key: "layout"}] = m.page_options
+    end
+
+    test "accepts v1 with page_options and post_options" do
+      json =
+        ~s({"name":"X","slug":"x","version":"1.0.0","render_version":"v1","tokens":[],) <>
+          ~s("page_options":[{"key":"layout","label":"L","type":"string","default":"a"}],) <>
+          ~s("post_options":[{"key":"cover","label":"C","type":"file","default":""}]})
+
+      assert {:ok, m} = Manifest.parse(json)
+      assert m.render_version == "v1"
+      assert [%{key: "layout"}] = m.page_options
+      assert [%{key: "cover", type: "file"}] = m.post_options
+    end
+
+    test "rejects an unknown render_version" do
+      json = ~s({"name":"X","slug":"x","version":"1.0.0","render_version":"v9","tokens":[]})
+      assert {:error, errs} = Manifest.parse(json)
+      assert Enum.any?(errs, &String.contains?(&1, "render_version"))
+    end
+
+    test "rejects post_options on a beta theme, whose renderer cannot expose them" do
+      json =
+        ~s({"name":"X","slug":"x","version":"1.0.0","tokens":[],) <>
+          ~s("post_options":[{"key":"cover","label":"C","type":"file","default":""}]})
+
+      assert {:error, errs} = Manifest.parse(json)
+      assert Enum.any?(errs, &String.contains?(&1, "post_options"))
+    end
+
+    test "reports field errors under the key the manifest actually used" do
+      legacy =
+        ~s({"name":"X","slug":"x","version":"1.0.0","tokens":[],) <>
+          ~s("metadata":[{"key":"k","label":"K","type":"weird","default":""}]})
+
+      named =
+        ~s({"name":"X","slug":"x","version":"1.0.0","tokens":[],) <>
+          ~s("page_options":[{"key":"k","label":"K","type":"weird","default":""}]})
+
+      assert {:error, a} = Manifest.parse(legacy)
+      assert {:error, b} = Manifest.parse(named)
+      assert Enum.any?(a, &String.contains?(&1, "metadata[0].type"))
+      assert Enum.any?(b, &String.contains?(&1, "page_options[0].type"))
     end
   end
 end

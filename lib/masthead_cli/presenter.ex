@@ -10,8 +10,8 @@ defmodule MastheadCli.Presenter do
   Fixture inputs are atom-keyed maps:
 
     * site: `%{name, title, description, slug, css_overrides, homepage_slug, theme_tokens}`
-    * post: `%{title, slug, excerpt, published_at, body, format}`
-    * page: `%{title, slug, format, body, metadata, show_in_nav}`
+    * post: `%{title, slug, excerpt, published_at, body, format, post_options}`
+    * page: `%{title, slug, format, body, page_options, show_in_nav}`
   """
 
   alias MastheadCli.CssSanitizer
@@ -35,7 +35,8 @@ defmodule MastheadCli.Presenter do
       "excerpt" => Map.get(p, :excerpt, ""),
       "published_at" => Map.get(p, :published_at),
       "url" => "/posts/" <> p.slug,
-      "tags" => Enum.map(Map.get(p, :tags) || [], &%{"name" => &1.name, "slug" => &1.slug})
+      "tags" => Enum.map(Map.get(p, :tags) || [], &%{"name" => &1.name, "slug" => &1.slug}),
+      "post_options" => Map.get(p, :post_options) || %{}
     }
   end
 
@@ -62,9 +63,7 @@ defmodule MastheadCli.Presenter do
       # For theme pages: the chosen templates/pages/<template>.liquid name.
       "template" => Map.get(pg, :template),
       "url" => "/" <> pg.slug,
-      # Raw override map. The Renderer merges manifest defaults on top of
-      # this before exposing it to templates.
-      "metadata" => Map.get(pg, :metadata) || %{}
+      "page_options" => Map.get(pg, :page_options) || %{}
     }
   end
 
