@@ -28,21 +28,21 @@ defmodule MastheadCli.ThemeTest do
       FixtureTheme.load!(%{
         "templates/pages/home.liquid" => "<section>{{ page.metadata.hero.title }}</section>",
         "templates/pages/home.json" =>
-          ~s({"label":"Home","metadata":[{"key":"hero","label":"Hero","type":"object",) <>
+          ~s({"label":"Home","page_options":[{"key":"hero","label":"Hero","type":"object",) <>
             ~s("fields":[{"key":"title","label":"T","type":"string","default":"Hi"}]}]})
       })
 
     on_exit(fn -> File.rm_rf!(dir) end)
 
     assert Map.keys(theme.page_templates) == ["home"]
-    assert %{"home" => %{label: "Home", metadata: [%{type: "object"}]}} = theme.page_configs
+    assert %{"home" => %{label: "Home", page_options: [%{type: "object"}]}} = theme.page_configs
   end
 
   test "reports an invalid page config" do
     dir =
       FixtureTheme.create!(%{
         "templates/pages/x.liquid" => "<div></div>",
-        "templates/pages/x.json" => ~s({"metadata":[{"key":"a","label":"A","type":"weird"}]})
+        "templates/pages/x.json" => ~s({"page_options":[{"key":"a","label":"A","type":"weird"}]})
       })
 
     on_exit(fn -> File.rm_rf!(dir) end)

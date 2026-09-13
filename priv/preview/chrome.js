@@ -1,5 +1,6 @@
 // The settings sidebar: a schema-driven editor for a theme's tokens and the
-// current page's metadata. It is a port of the platform's own settings form
+// options of whatever the frame is showing — a page's or a post's. Tokens and
+// options live in their own tabs. It is a port of the platform's settings form
 // (AdminLive.SettingsFields), so what you edit here is what a site owner will
 // edit there — the same field types, the same containers, the same defaults.
 //
@@ -17,8 +18,14 @@
   var path = document.body.dataset.path || "/";
   var state = null; // the last /__preview/state payload
   var tokens = {}; // token values being edited
-  var metadata = null; // current page's metadata values, or null
-  var saveTimer = null;
+  // Options are edited on the content item itself, so the Content tab and the
+  // options tab are two views of one model — no second copy to drift.
+  var tab = "content"; // which tab is open: "content", "tokens" or "options"
+  var tokenTimer = null;
+  var optionTimer = null;
+  var contentTimer = null;
+  var content = { posts: [], pages: [], templates: [] };
+  var openContent = {}; // which content items are expanded, kept across saves
   var itemSeq = 0;
   var openGroups = {}; // category accordion open-state, kept across rerenders
 
@@ -32,7 +39,9 @@
       .then(function (data) {
         state = data;
         tokens = clone(data.tokens.values);
-        metadata = data.page ? hydrate(clone(data.page.values), data.page.fields) : null;
+        content = clone(data.content);
+        hydrateContent();
+        if (tab === "options" && !data.settings) tab = "content";
         if (fileLabel) fileLabel.textContent = data.settings_file;
         render();
       })
@@ -41,24 +50,17 @@
       });
   }
 
-  // Debounced so typing a title is one save per pause, not one per keystroke.
-  function save(immediate) {
-    clearTimeout(saveTimer);
-    var delay = immediate ? 0 : 180;
+  // Debounced so typing a value is one save per pause, not one per keystroke.
+  function saveTokens() {
+    clearTimeout(tokenTimer);
 
-    saveTimer = setTimeout(function () {
-      var payload = { tokens: tokens };
-
-      if (state && state.page) {
-        payload.page = { slug: state.page.slug, metadata: strip(metadata) };
-      }
-
+    tokenTimer = setTimeout(function () {
       note("Saving…");
 
       fetch("/__preview/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ tokens: tokens })
       })
         .then(function () {
           reloadFrame();
@@ -67,7 +69,95 @@
         .catch(function () {
           note("Could not write the settings file.");
         });
-    }, delay);
+    }, 180);
+  }
+
+  // Content is posted whole: the list the sidebar shows was seeded from
+  // whatever was rendering, so sending it back makes the sidebar its owner.
+  function saveContent(kind, refresh) {
+    clearTimeout(contentTimer);
+
+    contentTimer = setTimeout(function () {
+      note("Saving…");
+
+      fetch("/__preview/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: { kind: kind, items: content[kind] } })
+      })
+        .then(function () {
+          // Adding or removing changes the route list, so the sidebar has to
+          // catch up. A field edit must not: rebuilding it mid-word would take
+          // the focus out of the input being typed into.
+          return refresh ? loadState() : null;
+        })
+        .then(function () {
+          reloadFrame();
+          note(null);
+        })
+        .catch(function () {
+          note("Could not write the settings file.");
+        });
+    }, 220);
+  }
+
+  // List fields need their per-item `_id`s before they can be edited.
+  function hydrateContent() {
+    ["posts", "pages"].forEach(function (kind) {
+      content[kind].forEach(function (item) {
+        item.options = hydrate(item.options || {}, optionFields(kind, item));
+      });
+    });
+  }
+
+  // A post's option schema is the manifest's; a page's is its sidecar config
+  // when it is a theme page, and the manifest's otherwise.
+  function optionFields(kind, item) {
+    if (kind === "posts") return content.post_fields || [];
+    if (item.format !== "theme") return content.page_fields || [];
+
+    var config = (content.page_configs || {})[item.template];
+    return config ? config.fields : [];
+  }
+
+  function saveOptions(kind, item) {
+    clearTimeout(optionTimer);
+
+    optionTimer = setTimeout(function () {
+      note("Saving…");
+
+      fetch("/__preview/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            kind: kind === "posts" ? "post" : "page",
+            slug: item.slug,
+            options: strip(item.options)
+          }
+        })
+      })
+        .then(function () {
+          reloadFrame();
+          note(null);
+        })
+        .catch(function () {
+          note("Could not write the settings file.");
+        });
+    }, 180);
+  }
+
+  // The item the frame is currently showing, so the options tab and the
+  // Content tab edit the same object.
+  function framedItem() {
+    if (!state.settings) return null;
+    var kind = state.settings.kind === "post" ? "posts" : "pages";
+
+    var item = content[kind].filter(function (candidate) {
+      return candidate.slug === state.settings.slug;
+    })[0];
+
+    return item ? { kind: kind, item: item } : null;
   }
 
   function reloadFrame() {
@@ -126,17 +216,292 @@
   function render() {
     body.innerHTML = "";
     body.appendChild(routeSection());
+    body.appendChild(tabBar());
+    body.appendChild(paneFor(tab));
+    pathLabel.textContent = path;
+  }
 
-    if (state.tokens.fields.length) {
-      body.appendChild(
-        section("Theme tokens", fieldsNode(state.tokens.fields, tokens, function () {
-          save();
-        }, "tokens"))
+  // Theme tokens are always editable; the options tab is whatever the frame is
+  // showing — a page or a post — and is absent on the post list and search.
+  function tabBar() {
+    var nav = el("div", "mh-tabs");
+
+    tabs().forEach(function (entry) {
+      var button = el("button", "mh-tab" + (entry.id === tab ? " mh-tab-on" : ""));
+      button.type = "button";
+      button.textContent = entry.label;
+      button.addEventListener("click", function () {
+        tab = entry.id;
+        render();
+      });
+      nav.appendChild(button);
+    });
+
+    return nav;
+  }
+
+  function tabs() {
+    var entries = [
+      { id: "content", label: "Content" },
+      { id: "tokens", label: "Theme" }
+    ];
+
+    if (state.settings) {
+      entries.push({
+        id: "options",
+        label: state.settings.kind === "post" ? "Post options" : "Page options"
+      });
+    }
+
+    return entries;
+  }
+
+  function paneFor(which) {
+    if (which === "options") return optionsPane();
+    if (which === "content") return contentPane();
+    return tokensPane();
+  }
+
+  function tokensPane() {
+    if (!state.tokens.fields.length) {
+      return pane(note_("This theme declares no tokens."));
+    }
+
+    return pane(
+      fieldsNode(state.tokens.fields, tokens, function () {
+        saveTokens();
+      }, "tokens")
+    );
+  }
+
+  function optionsPane() {
+    var framed = framedItem();
+    var label = state.settings.kind === "post" ? "post" : "page";
+
+    if (!framed) {
+      return pane(note_("This " + label + " is not in the preview content."));
+    }
+
+    var fields = optionFields(framed.kind, framed.item);
+
+    if (!fields.length) {
+      return pane(note_("This " + label + " declares no options."));
+    }
+
+    var wrap = el("div");
+    wrap.appendChild(subtitle(state.settings.label));
+
+    if (state.settings.description) {
+      wrap.appendChild(note_(state.settings.description));
+    }
+
+    wrap.appendChild(
+      fieldsNode(fields, framed.item.options, function () {
+        saveOptions(framed.kind, framed.item);
+      }, "options")
+    );
+
+    return pane(wrap);
+  }
+
+  // The preview's own posts and pages, editable in place. What you see here is
+  // whatever is rendering — the built-in samples, your preview.json, or your
+  // earlier edits — and changing anything makes preview.local.json own it.
+  function contentPane() {
+    var wrap = el("div");
+
+    wrap.appendChild(contentList("posts", "Posts", "Post", postFields));
+    wrap.appendChild(contentList("pages", "Pages", "Page", pageFields));
+
+    return pane(wrap);
+  }
+
+  function contentList(kind, heading, itemLabel, fieldsFor) {
+    var wrap = el("div", "mh-content");
+    var head = el("div", "mh-content-head");
+    var title = el("h3");
+    title.textContent = heading;
+
+    var add = el("button", "mh-add");
+    add.type = "button";
+    add.textContent = "+ " + itemLabel;
+    add.addEventListener("click", function () {
+      var fresh = blankContent(kind);
+      fresh.options = hydrate({}, optionFields(kind, fresh));
+      content[kind].push(fresh);
+      openContent[kind + ":" + (content[kind].length - 1)] = true;
+      saveContent(kind, true);
+      render();
+    });
+
+    head.appendChild(title);
+    head.appendChild(add);
+    wrap.appendChild(head);
+
+    if (!content[kind].length) {
+      wrap.appendChild(note_("No " + heading.toLowerCase() + " yet."));
+      return wrap;
+    }
+
+    content[kind].forEach(function (item, index) {
+      wrap.appendChild(contentItem(kind, itemLabel, item, index, fieldsFor(item)));
+    });
+
+    return wrap;
+  }
+
+  function contentItem(kind, itemLabel, item, index, fields) {
+    var box = el("details", "mh-group");
+    var summary = el("summary");
+    summary.textContent = item.title || itemLabel + " " + (index + 1);
+    box.appendChild(summary);
+
+    var openKey = kind + ":" + index;
+    box.open = openContent[openKey] === true;
+    box.addEventListener("toggle", function () {
+      openContent[openKey] = box.open;
+    });
+
+    var inner = el("div");
+
+    fields.forEach(function (field) {
+      inner.appendChild(
+        scalarNode(field, {
+          get: function () {
+            return field.read ? field.read(item) : item[field.key];
+          },
+          set: function (value) {
+            if (field.write) field.write(item, value);
+            else item[field.key] = value;
+            summary.textContent = item.title || itemLabel + " " + (index + 1);
+            saveContent(kind, false);
+            if (field.rerender) render();
+          }
+        })
+      );
+    });
+
+    var optionsFor = optionFields(kind, item);
+
+    if (optionsFor.length) {
+      var heading = el("p", "mh-subtitle");
+      heading.textContent = itemLabel + " options";
+      inner.appendChild(heading);
+
+      inner.appendChild(
+        fieldsNode(optionsFor, item.options, function () {
+          saveOptions(kind, item);
+        }, kind + ":" + index)
       );
     }
 
-    body.appendChild(pageSection());
-    pathLabel.textContent = path;
+    var remove = el("button", "mh-remove");
+    remove.type = "button";
+    remove.textContent = "Remove " + itemLabel.toLowerCase();
+    remove.addEventListener("click", function () {
+      content[kind].splice(content[kind].indexOf(item), 1);
+      openContent = {};
+      saveContent(kind, true);
+      render();
+    });
+
+    inner.appendChild(remove);
+    box.appendChild(inner);
+    return box;
+  }
+
+  function postFields() {
+    return [
+      { key: "title", label: "Title", type: "string" },
+      { key: "slug", label: "Slug", type: "string", description: "Its URL: /posts/<slug>" },
+      { key: "excerpt", label: "Excerpt", type: "text" },
+      { key: "published_at", label: "Published", type: "string", description: "YYYY-MM-DD" },
+      {
+        key: "tags",
+        label: "Tags",
+        type: "string",
+        description: "Comma separated",
+        read: function (item) {
+          return (item.tags || []).join(", ");
+        },
+        write: function (item, value) {
+          item.tags = String(value)
+            .split(",")
+            .map(function (t) {
+              return t.trim();
+            })
+            .filter(Boolean);
+        }
+      },
+      { key: "format", label: "Format", type: "select", options: ["markdown", "html"] },
+      { key: "body", label: "Body", type: "text" }
+    ];
+  }
+
+  function pageFields(item) {
+    var fields = [
+      { key: "title", label: "Title", type: "string" },
+      { key: "slug", label: "Slug", type: "string", description: "Its URL: /<slug>" },
+      {
+        key: "format",
+        label: "Format",
+        type: "select",
+        options: ["markdown", "html", "theme"],
+        // A theme page picks a template instead of carrying a body, so the
+        // field list below changes with this one.
+        rerender: true
+      }
+    ];
+
+    if (item.format === "theme") {
+      fields.push({
+        key: "template",
+        label: "Template",
+        type: "select",
+        options: content.templates,
+        description: "From templates/pages/"
+      });
+    } else {
+      fields.push({ key: "body", label: "Body", type: "text" });
+    }
+
+    fields.push({ key: "show_in_nav", label: "Show in nav", type: "boolean" });
+    return fields;
+  }
+
+  function blankContent(kind) {
+    if (kind === "posts") {
+      return {
+        title: "New post",
+        slug: "new-post-" + (content.posts.length + 1),
+        excerpt: "",
+        format: "markdown",
+        published_at: new Date().toISOString().slice(0, 10),
+        tags: [],
+        body: "Lorem ipsum dolor sit amet."
+      };
+    }
+
+    return {
+      title: "New page",
+      slug: "new-page-" + (content.pages.length + 1),
+      format: "markdown",
+      template: null,
+      show_in_nav: true,
+      body: "Lorem ipsum dolor sit amet."
+    };
+  }
+
+  function pane(node) {
+    var wrap = el("section", "mh-section");
+    wrap.appendChild(node);
+    return wrap;
+  }
+
+  function subtitle(text) {
+    var node = el("p", "mh-subtitle");
+    node.textContent = text;
+    return node;
   }
 
   function section(title, node) {
@@ -163,37 +528,7 @@
       navigate(select.value);
     });
 
-    return section("Page", select);
-  }
-
-  function pageSection() {
-    if (!state.page) {
-      return section(
-        "Page settings",
-        note_("This route has no page settings — it's the post list or a post.")
-      );
-    }
-
-    if (!state.page.fields.length) {
-      return section(
-        "Page settings — " + state.page.label,
-        note_("This page's template declares no settings.")
-      );
-    }
-
-    var wrap = el("div");
-
-    if (state.page.description) {
-      wrap.appendChild(note_(state.page.description));
-    }
-
-    wrap.appendChild(
-      fieldsNode(state.page.fields, metadata, function () {
-        save();
-      }, "page")
-    );
-
-    return section("Page settings — " + state.page.label, wrap);
+    return section("Viewing", select);
   }
 
   // A field list, grouped into accordions when any field declares a category
