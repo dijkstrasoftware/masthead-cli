@@ -8,9 +8,9 @@ defmodule MastheadCli.PreviewConfigTest do
     on_exit(fn -> File.rm_rf!(dir) end)
 
     %{site: site, posts: posts, pages: pages} = PreviewConfig.load(dir)
-    assert site.name == "The Long Way Round"
+    assert site.name == "Lorem Ipsum"
     assert length(posts) == 3
-    assert Enum.any?(pages, &(&1.slug == "about"))
+    assert Enum.any?(pages, &(&1.slug == "lorem"))
   end
 
   test "preview.json overrides site fields, tokens and homepage" do
@@ -69,7 +69,7 @@ defmodule MastheadCli.PreviewConfigTest do
 
     %{pages: pages} = PreviewConfig.load(dir)
     assert Enum.map(pages, & &1.title) == ["Alpha", "Zeta"]
-    assert hd(pages).metadata == %{"layout" => "wide"}
+    assert hd(pages).page_options == %{"layout" => "wide"}
   end
 
   test "split_front_matter handles files without front matter" do

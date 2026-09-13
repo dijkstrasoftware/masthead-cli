@@ -27,7 +27,7 @@ defmodule MastheadCli.RendererTest do
           ~s(<h1>{{ page.metadata.hero.title | escape }}</h1>) <>
             "{% for f in page.metadata.features %}<li>{{ f.name | escape }}</li>{% endfor %}",
         "templates/pages/home.json" =>
-          ~s({"metadata":[) <>
+          ~s({"page_options":[) <>
             ~s({"key":"hero","label":"Hero","type":"object","fields":[{"key":"title","label":"T","type":"string","default":"Welcome"}]},) <>
             ~s({"key":"features","label":"F","type":"list","fields":[{"key":"name","label":"N","type":"string","default":""}],) <>
             ~s("default":[{"name":"Fast"},{"name":"Simple"}]}]})
@@ -35,7 +35,7 @@ defmodule MastheadCli.RendererTest do
 
     on_exit(fn -> File.rm_rf!(dir) end)
 
-    page = %{title: "Home", slug: "home", format: "theme", template: "home", metadata: %{}}
+    page = %{title: "Home", slug: "home", format: "theme", template: "home", page_options: %{}}
     html = Renderer.render_theme_page(theme, %{site: site, page: page, posts: [], pages: []})
 
     assert html =~ "<h1>Welcome</h1>"
@@ -52,7 +52,7 @@ defmodule MastheadCli.RendererTest do
       slug: "gone",
       format: "theme",
       template: "does-not-exist",
-      metadata: %{}
+      page_options: %{}
     }
 
     html = Renderer.render_theme_page(theme, %{site: site, page: page, posts: [], pages: []})
@@ -116,14 +116,14 @@ defmodule MastheadCli.RendererTest do
     assert html =~ "<title>Acme Co.</title>"
   end
 
-  test "page metadata merges manifest defaults", %{theme: theme, site: site} do
+  test "page options merge manifest defaults", %{theme: theme, site: site} do
     # No override -> default layout "contained" -> body has no `wide` class.
     page = %{
       title: "About",
       slug: "about",
       format: "markdown",
       show_in_nav: true,
-      metadata: %{},
+      page_options: %{},
       body: "hi"
     }
 
@@ -131,14 +131,14 @@ defmodule MastheadCli.RendererTest do
     assert html =~ ~s(<body class="">)
 
     # Override layout=wide -> body carries the `wide` class.
-    page = %{page | metadata: %{"layout" => "wide"}}
+    page = %{page | page_options: %{"layout" => "wide"}}
     html = Renderer.render_page(theme, %{site: site, page: page, body_html: "hi", pages: []})
     assert html =~ ~s(<body class="wide">)
   end
 
   test "show_navigation=false hides the nav on that page", %{theme: theme, site: site} do
     pages_for_nav = [
-      %{title: "About", slug: "about", format: "markdown", metadata: %{}, show_in_nav: true}
+      %{title: "About", slug: "about", format: "markdown", page_options: %{}, show_in_nav: true}
     ]
 
     page = %{
@@ -146,7 +146,7 @@ defmodule MastheadCli.RendererTest do
       slug: "solo",
       format: "markdown",
       show_in_nav: true,
-      metadata: %{"show_navigation" => false},
+      page_options: %{"show_navigation" => false},
       body: "x"
     }
 
@@ -261,5 +261,97 @@ defmodule MastheadCli.RendererTest do
       published_at: ~U[2026-01-02 10:00:00Z],
       tags: Enum.map(tags, &%{name: &1, slug: String.downcase(&1)})
     }
+  end
+
+  describe "render version v1" do
+    @v1_manifest ~s({
+      "name":"V1","slug":"v1","version":"1.0.0","render_version":"v1",
+      "tokens":[],
+      "page_options":[{"key":"layout","label":"L","type":"select","options":["contained","wide"],"default":"contained"}],
+      "post_options":[
+        {"key":"featured_image","label":"F","type":"file","default":""},
+        {"key":"subtitle","label":"S","type":"string","default":"—"}
+      ]
+    })
+
+    setup %{site: site} do
+      {dir, theme} =
+        FixtureTheme.load!(%{
+          "manifest.json" => @v1_manifest,
+          "templates/layout.liquid" =>
+            ~s(<body data-layout="{{ page.page_options.layout }}">{{ content }}</body>),
+          "templates/post.liquid" =>
+            ~s(<article data-subtitle="{{ post.post_options.subtitle }}" data-cover="{{ post.post_options.featured_image }}">) <>
+              "{{ body_html }}</article>",
+          "templates/index.liquid" =>
+            "{% for p in posts %}" <>
+              ~s(<li data-subtitle="{{ p.post_options.subtitle }}">{{ p.title }}</li>) <>
+              "{% endfor %}"
+        })
+
+      on_exit(fn -> File.rm_rf!(dir) end)
+      %{theme: theme, site: site}
+    end
+
+    test "page options reach the template under page.page_options", %{theme: theme, site: site} do
+      page = %{
+        title: "Home",
+        slug: "home",
+        format: "markdown",
+        page_options: %{"layout" => "wide"}
+      }
+
+      html = Renderer.render_page(theme, %{site: site, page: page, pages: [], body_html: ""})
+      assert html =~ ~s(data-layout="wide")
+    end
+
+    test "post options merge manifest defaults", %{theme: theme, site: site} do
+      post = %{title: "Hello", slug: "hello", format: "markdown", post_options: %{}}
+
+      html = Renderer.render_post(theme, %{site: site, post: post, pages: [], body_html: ""})
+      assert html =~ ~s(data-subtitle="—")
+      assert html =~ ~s(data-cover="")
+    end
+
+    test "a post's own options win, and a file value is used verbatim", %{
+      theme: theme,
+      site: site
+    } do
+      post = %{
+        title: "Hello",
+        slug: "hello",
+        format: "markdown",
+        post_options: %{"subtitle" => "Set", "featured_image" => "/assets/cover.png"}
+      }
+
+      html = Renderer.render_post(theme, %{site: site, post: post, pages: [], body_html: ""})
+      assert html =~ ~s(data-subtitle="Set")
+      assert html =~ ~s(data-cover="/assets/cover.png")
+    end
+
+    test "posts in a list carry their options too", %{theme: theme, site: site} do
+      posts = [
+        %{title: "One", slug: "one", format: "markdown", post_options: %{"subtitle" => "First"}},
+        %{title: "Two", slug: "two", format: "markdown", post_options: %{}}
+      ]
+
+      html = Renderer.render_index(theme, %{site: site, posts: posts, pages: []})
+      assert html =~ ~s(data-subtitle="First")
+      assert html =~ ~s(data-subtitle="—")
+    end
+  end
+
+  describe "render version beta (no render_version)" do
+    test "page options still reach templates as page.metadata", %{theme: theme, site: site} do
+      page = %{
+        title: "Home",
+        slug: "home",
+        format: "markdown",
+        page_options: %{"layout" => "wide"}
+      }
+
+      html = Renderer.render_page(theme, %{site: site, page: page, pages: [], body_html: ""})
+      assert html =~ ~s(<body class="wide">)
+    end
   end
 end

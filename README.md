@@ -4,9 +4,9 @@ A local theme editor and preview server for [Masthead](https://masthead.site).
 
 Run `masthead preview` inside a theme directory: your theme renders in a
 frame, and a **settings sidebar** beside it shows every token your
-`manifest.json` declares and every setting the page you're looking at
-declares. Change one and the page re-renders — no database, no Phoenix app,
-no upload step.
+`manifest.json` declares and every option the page or post you're looking at
+declares. Change one and it re-renders — no database, no Phoenix app, no
+upload step.
 
 It reproduces Masthead's real render pipeline:
 
@@ -18,7 +18,9 @@ It reproduces Masthead's real render pipeline:
 - the **content pipeline** (Earmark markdown + the same HTML sanitizer),
   including Liquid bodies for `html`-format pages and posts
 - **theme pages** (`templates/pages/<name>.liquid`) and their per-page
-  settings, merged against the sidecar `<name>.json` schema
+  options, merged against the sidecar `<name>.json` schema
+- the manifest's **`render_version`**, so a theme previews against the exact
+  render contract it names (see below)
 - the exact route table and controller logic of the public site
 
 The renderer, presenter, manifest, sandbox, filters, CSS sanitizer and
@@ -84,14 +86,21 @@ renders in an iframe, with the settings sidebar next to it. Any theme URL you
 open lands there, and clicking through your theme's own navigation moves the
 sidebar with you.
 
-The sidebar has three parts:
+The sidebar has a route picker at the top — **Viewing**, which jumps to any
+page or post in your preview content — and then three tabs:
 
-- **Page** — jump to any page or post in your preview content.
-- **Theme tokens** — every token in `manifest.json`, grouped by `category`.
-- **Page settings** — the settings of the page currently in the frame: its
-  sidecar config (`templates/pages/<name>.json`) for a theme page, otherwise
-  the manifest's global `metadata`. The post list and post pages have none,
-  same as in production.
+- **Content** — the preview's own posts and pages. Add one, remove one, or
+  edit a title, slug, excerpt, date, tags, format or body in place — and set
+  **that item's options** right there, whichever page or post it is. You never
+  have to write a content file to try your theme against something else.
+- **Theme** — every token in `manifest.json`, grouped by `category`.
+- **Page options** / **Post options** — the same options for whatever is in
+  the frame right now, without hunting for it in the list. A page's schema
+  comes from its sidecar config (`templates/pages/<name>.json`) when it is a
+  theme page, otherwise from the manifest's `page_options`; a post's comes
+  from `post_options`. The post list and search have neither, same as in
+  production. Both tabs edit one value — whichever you use, it is the same
+  entry in `preview.local.json`.
 
 Editing a field **re-renders the page on the server**. That matters: a `list`
 token your template loops over, or a `boolean` your template branches on,
@@ -114,10 +123,23 @@ directory:
     "footer_links": [{ "label": "Docs", "url": "/docs" }]
   },
   "pages": {
-    "home": { "metadata": { "hero": { "heading": "Hello" } } }
+    "home": { "page_options": { "hero": { "heading": "Hello" } } }
+  },
+  "posts": {
+    "hello-world": { "post_options": { "featured_image": "/assets/cover.jpg" } }
+  },
+  "content": {
+    "posts": [{ "title": "Hello world", "slug": "hello-world", "body": "Hi." }]
   }
 }
 ```
+
+`content` appears once you edit a post's or page's *content* in the sidebar:
+the whole list is copied in, seeded from whatever was rendering, and owns that
+kind (`posts` or `pages`) from then on. Editing only an item's *options*
+leaves `content` alone — the seed still owns the list, and just that slug
+carries an override. Removing an item drops the options it left behind, so a
+later item reusing the slug starts clean.
 
 This is a **preview-only scratchpad**. Nothing here is applied, uploaded, or
 visible to the platform — it exists so your edits survive a refresh. It layers
@@ -127,8 +149,8 @@ your `.gitignore` for you. **Reset** in the sidebar throws it all away.
 
 ## Field types
 
-A manifest `token`, a global `metadata` field and a theme page's sidecar field
-are all the same declaration, with the same types:
+A manifest `token`, a `page_options` or `post_options` field, and a theme
+page's sidecar field are all the same declaration, with the same types:
 
 | Type | Control |
 | --- | --- |
@@ -167,10 +189,36 @@ are all the same declaration, with the same types:
 Scalar tokens also become CSS custom properties (`--accent`); `object` and
 `list` tokens are template-only and never reach the `:root` block.
 
+## Render versions
+
+Masthead freezes its renderer and versions it, so a theme keeps rendering the
+way it did the day it was written. Your manifest names the contract it was
+built against:
+
+```json
+{ "name": "Studio", "slug": "studio", "version": "1.0.0", "render_version": "v1" }
+```
+
+| `render_version` | Page options are declared as | Templates read |
+| --- | --- | --- |
+| absent (or `"beta"`) | `metadata` | `page.metadata.<key>` |
+| `"v1"` | `page_options` + `post_options` | `page.page_options.<key>`, `post.post_options.<key>` |
+
+`post_options` only exist under `v1` — declaring them on a beta theme is a
+validation error, because the beta renderer cannot expose them. An unknown
+`render_version` is rejected too, so a typo fails `masthead validate` rather
+than silently rendering against the wrong contract.
+
+Preview renders against whichever version your manifest names, and
+`masthead validate` prints it (`renders as`). To move an existing theme to
+`v1`: add `"render_version": "v1"`, rename the manifest's `metadata` key (and
+any `templates/pages/*.json` one) to `page_options`, and change
+`page.metadata.` to `page.page_options.` in your templates.
+
 ## Creating a theme
 
 `masthead new NAME` scaffolds a theme in a `NAME/` directory by cloning the
-[theme template](https://github.com/JoeriDijkstra/masthead-template) — a
+[theme template](https://github.com/dijkstrasoftware/masthead-template) — a
 complete, valid starter with a theme page and example `object`/`list` tokens.
 The template's git history is removed so you start clean, and the manifest's
 `name`/`slug` are set from `NAME`:
@@ -231,8 +279,21 @@ masthead package --bump minor        # bump manifest version first
 
 ## Preview content
 
-With no configuration, the preview ships realistic sample content (a few
-posts, an About page and a Blog page) so every theme has something to render.
+With no configuration, the preview ships sample content — a few lorem ipsum
+posts and pages — so every theme has something to render. The copy is filler
+on purpose: it can't be mistaken for your own, and it keeps your eye on the
+layout. The *shape* is real (headings, lists, a blockquote, a code block,
+links, tags, dates), so your CSS gets exercised.
+
+There are three ways to change it, and they layer in this order:
+
+1. **The Content tab** in the sidebar — no files, no restart. The first edit
+   copies whatever is showing into `preview.local.json`, which owns it from
+   then on; **Reset** hands it back.
+2. **`preview.json`** — a committed seed you hand-author (below).
+3. **Markdown files** in `preview/posts/` and `preview/pages/` (below), which
+   win over `preview.json`'s inline arrays.
+
 Customise it with a `preview.json` in the theme directory:
 
 ```json
@@ -271,7 +332,7 @@ an optional JSON **front matter** block:
 ```markdown
 ---
 { "title": "About", "slug": "about", "format": "markdown",
-  "metadata": { "layout": "wide" }, "show_in_nav": true }
+  "page_options": { "layout": "wide" }, "show_in_nav": true }
 ---
 ## About us
 
@@ -292,9 +353,9 @@ Same contract as production:
 | --- | --- |
 | `site` | `name`, `title`, `description`, `slug`, `css_overrides`, `homepage_slug` |
 | `theme` | `name`, `slug`, `version`, `asset_base`, `tokens.<key>`, `css` |
-| `post` | `title`, `slug`, `excerpt`, `published_at`, `url`, `tags` |
+| `post` | `title`, `slug`, `excerpt`, `published_at`, `url`, `tags`, `post_options.<key>` (v1) |
 | `posts` | list of the above |
-| `page` | `title`, `slug`, `format`, `template`, `url`, `metadata.<key>` |
+| `page` | `title`, `slug`, `format`, `template`, `url`, `page_options.<key>` (`metadata.<key>` on beta) |
 | `pages` | list of the above (nav: homepage + `show_in_nav:false` excluded) |
 | `tags` / `current_tag` | the site's tags (with `active`) and the one being filtered on |
 | `posts_by_tag` | `posts_by_tag["slug"]` → the posts carrying that tag |

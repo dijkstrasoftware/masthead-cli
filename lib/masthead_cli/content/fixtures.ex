@@ -1,9 +1,14 @@
 defmodule MastheadCli.Content.Fixtures do
   @moduledoc """
   Built-in sample content used by `masthead preview` when the theme
-  directory has no `preview/` overrides. Gives every theme a realistic
-  site, a few posts and a couple of pages to render against with zero
-  configuration.
+  directory has no `preview/` overrides. Gives every theme a few posts and
+  pages to render against with zero configuration.
+
+  The copy is lorem ipsum on purpose: filler reads as filler, so nothing here
+  can be mistaken for the author's own content, and the eye judges the layout
+  rather than the words. The *shape* is deliberate, though — headings, lists,
+  a blockquote, a code block, inline formatting and links — so a theme's CSS
+  gets exercised the way real content would exercise it.
 
   All shapes match what `MastheadCli.PreviewConfig` produces and what
   `MastheadCli.Presenter` expects (atom-keyed maps).
@@ -20,10 +25,9 @@ defmodule MastheadCli.Content.Fixtures do
 
   def default_site do
     %{
-      name: "The Long Way Round",
-      title: "The Long Way Round",
-      description:
-        "Notes on building software slowly, on purpose — craft, tools, and the occasional detour.",
+      name: "Lorem Ipsum",
+      title: "Lorem Ipsum Dolor",
+      description: "Sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt.",
       slug: "preview",
       css_overrides: "",
       # Set via preview.json `site.homepage`; nil means the theme's own
@@ -38,92 +42,96 @@ defmodule MastheadCli.Content.Fixtures do
   def default_posts do
     [
       %{
-        title: "On Choosing Boring Technology",
-        slug: "boring-technology",
+        title: "Lorem ipsum dolor sit amet",
+        slug: "lorem-ipsum-dolor-sit-amet",
         excerpt:
-          "The most exciting decision you can make is usually the most boring one. A short defense of dependable tools.",
+          "Consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
         format: "markdown",
         published_at: days_ago(2),
-        tags: [tag("Engineering"), tag("Opinion")],
+        tags: [tag("Lorem"), tag("Ipsum")],
+        post_options: %{},
         body: """
-        Every project starts with the same temptation: reach for the newest,
-        shiniest thing. Resist it.
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
+        tempor incididunt ut labore et dolore magna aliqua.
 
-        ## Innovation tokens
+        ## Ut enim ad minim veniam
 
-        You get a small number of *innovation tokens*. Spend them where they
-        matter — the actual problem you're solving — and use boring,
-        well-understood technology everywhere else.
+        Quis nostrud exercitation ullamco laboris nisi ut *aliquip* ex ea
+        commodo consequat. Duis aute irure dolor in reprehenderit in voluptate
+        velit esse cillum dolore.
 
-        - A database you've run in production before.
-        - A language your team already knows.
-        - A deployment story you can debug at 3am.
+        - Excepteur sint occaecat cupidatat non proident.
+        - Sunt in culpa qui officia deserunt mollit.
+        - Anim id est laborum et dolorum fuga.
 
-        > The best tool is the one whose failure modes you already understand.
+        > Sed ut perspiciatis unde omnis iste natus error sit voluptatem
+        > accusantium doloremque laudantium.
 
-        Boring isn't a synonym for bad. It's a synonym for *known*.
+        Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut
+        fugit, sed quia consequuntur magni dolores eos.
 
-        ### A quick checklist
+        ### Neque porro quisquam est
 
-        1. Has this survived a few years of real use?
-        2. Can you find answers when it breaks?
-        3. Would you bet a weekend on it?
+        1. Qui dolorem ipsum quia dolor sit amet.
+        2. Consectetur, adipisci velit, sed quia non numquam.
+        3. Eius modi tempora incidunt ut labore et dolore.
 
-        If the answer to all three is yes, you've probably found the right
-        tool — even if nobody will be impressed at the conference.
+        Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis
+        suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur.
         """
       },
       %{
-        title: "The Underrated Power of Plain Text",
-        slug: "plain-text",
+        title: "Sed ut perspiciatis unde omnis",
+        slug: "sed-ut-perspiciatis",
         excerpt:
-          "Files you can read in fifty years, grep in a second, and version with git. Plain text is quietly the best format we have.",
+          "Iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam.",
         format: "markdown",
         published_at: days_ago(9),
-        tags: [tag("Engineering"), tag("Tools")],
+        tags: [tag("Lorem"), tag("Dolor")],
+        post_options: %{},
         body: """
-        There's a reason the tools that last are the ones built on plain
-        text. Markdown, CSV, config files, source code — all just text.
+        At vero eos et accusamus et iusto odio dignissimos ducimus qui
+        blanditiis praesentium voluptatum deleniti atque corrupti.
 
-        ## Why it wins
+        ## Quos dolores et quas molestias
 
-        Plain text is **diffable**, **greppable**, and **durable**. It
-        outlives the application that created it. Open a `.txt` file from
-        1995 and it still renders perfectly today.
+        Excepturi sint occaecati cupiditate non provident, **similique sunt**
+        in culpa qui officia deserunt mollitia animi, id est laborum et
+        dolorum fuga. Et harum quidem rerum facilis est et `expedita`
+        distinctio.
 
         ```elixir
-        defmodule Notes do
-          def read!(path), do: File.read!(path)
+        defmodule Lorem do
+          def ipsum(dolor), do: "sit amet, " <> dolor
         end
         ```
 
-        Compare that to a proprietary binary blob whose only reader stopped
-        shipping a decade ago.
-
-        Keep your important things in text. Future-you will be grateful.
+        Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil
+        impedit quo minus id quod maxime placeat facere possimus, omnis
+        voluptas assumenda est, omnis dolor [repellendus](https://example.com).
         """
       },
       %{
-        title: "Small Tools, Composed",
-        slug: "small-tools-composed",
+        title: "Temporibus autem quibusdam",
+        slug: "temporibus-autem-quibusdam",
         excerpt:
-          "The Unix idea that refuses to die: do one thing well, and let things talk to each other.",
+          "Et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates.",
         format: "markdown",
         published_at: days_ago(21),
-        tags: [tag("Tools")],
+        tags: [tag("Ipsum")],
+        post_options: %{},
         body: """
-        A big monolithic tool tries to anticipate every need and fails at
-        the edges. A small tool does one thing and gets out of the way.
+        Repudiandae sint et molestiae non recusandae. Itaque earum rerum hic
+        tenetur a sapiente delectus.
 
-        The magic is in *composition*: when each piece reads from one place
-        and writes to another, you can chain them into something nobody
-        designed up front.
+        Ut aut reiciendis voluptatibus maiores alias consequatur aut
+        perferendis doloribus asperiores repellat.
 
-        - Easy to test, because the surface is small.
-        - Easy to replace, because the boundaries are clear.
-        - Easy to reason about, because there's less to hold in your head.
+        - Lorem ipsum dolor sit amet, consectetur.
+        - Adipiscing elit, sed do eiusmod tempor.
+        - Incididunt ut labore et dolore magna.
 
-        Build the small thing. Let it compose.
+        Aliqua ut enim ad minim veniam, quis nostrud exercitation.
         """
       }
     ]
@@ -132,30 +140,29 @@ defmodule MastheadCli.Content.Fixtures do
   def default_pages do
     [
       %{
-        title: "About",
-        slug: "about",
+        title: "Lorem",
+        slug: "lorem",
         format: "markdown",
         show_in_nav: true,
-        metadata: %{},
+        page_options: %{},
         body: """
-        ## About this site
+        ## Dolor sit amet
 
-        This is sample content rendered by **masthead preview** so you can
-        see your theme with realistic copy — headings, lists, links,
+        Consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+        labore et dolore magna aliqua — headings, lists, links,
         `inline code`, and the occasional [link](https://masthead.site).
 
-        Replace it with your own by dropping a `preview/` folder into your
-        theme directory. Until then, edit away and refresh — your CSS and
-        template changes show up immediately.
+        Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris
+        nisi ut aliquip ex ea commodo consequat.
         """
       },
       %{
-        title: "Blog",
-        slug: "blog",
+        title: "Ipsum",
+        slug: "ipsum",
         format: "theme",
         template: "blog",
         show_in_nav: true,
-        metadata: %{},
+        page_options: %{},
         body: ""
       }
     ]

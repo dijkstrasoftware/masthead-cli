@@ -169,12 +169,18 @@ defmodule MastheadCli.RouterTest do
     test "/__preview/state carries the token schema and the framed page's schema", %{dir: dir} do
       state = dir |> request(:get, "/__preview/state?path=/") |> json()
 
-      assert %{"tokens" => tokens, "page" => page, "routes" => routes, "assets" => assets} = state
+      assert %{
+               "tokens" => tokens,
+               "settings" => page,
+               "routes" => routes,
+               "assets" => assets
+             } = state
 
       assert Enum.map(tokens["fields"], & &1["type"]) == ["color", "object", "list"]
       assert tokens["values"]["hero"] == %{"title" => "Default hero"}
       assert tokens["values"]["links"] == [%{"label" => "Home", "url" => "/"}]
 
+      assert page["kind"] == "page"
       assert page["slug"] == "home"
       assert page["label"] == "Homepage"
       assert Enum.map(page["fields"], & &1["key"]) == ["hero", "crew"]
@@ -184,9 +190,53 @@ defmodule MastheadCli.RouterTest do
       assert assets == ["/assets/logo.png"]
     end
 
-    test "a post route has no page settings to edit", %{dir: dir} do
+    test "a post route edits post options, which a beta theme cannot declare", %{dir: dir} do
       state = dir |> request(:get, "/__preview/state?path=/posts/hello") |> json()
-      assert state["page"] == nil
+
+      assert state["settings"]["kind"] == "post"
+      assert state["settings"]["slug"] == "hello"
+      assert state["settings"]["fields"] == []
+      assert state["theme"]["render_version"] == "beta"
+    end
+
+    test "the post list has nothing to edit", %{dir: dir} do
+      state = dir |> request(:get, "/__preview/state?path=/search") |> json()
+      assert state["settings"] == nil
+    end
+
+    test "the state carries the editable content and the theme's page templates", %{dir: dir} do
+      content = dir |> request(:get, "/__preview/state?path=/") |> json() |> Map.get("content")
+
+      assert "hello" in Enum.map(content["posts"], & &1["slug"])
+      assert "home" in Enum.map(content["pages"], & &1["slug"])
+      assert content["templates"] == ["home"]
+
+      post = Enum.find(content["posts"], &(&1["slug"] == "hello"))
+      assert post["format"] == "markdown"
+      assert is_list(post["tags"])
+
+      # Every item carries its own effective options, and the schemas travel
+      # with the list, so any item's options are editable — not just the
+      # framed one's.
+      assert post["options"] == %{}
+      assert content["post_fields"] == []
+      assert Enum.map(content["page_fields"], & &1["key"]) == []
+      assert %{"home" => %{"fields" => [_ | _]}} = content["page_configs"]
+
+      home = Enum.find(content["pages"], &(&1["slug"] == "home"))
+      assert home["options"]["hero"] == %{"title" => "Page hero"}
+    end
+
+    test "posting content replaces the preview's posts", %{dir: dir} do
+      payload = %{content: %{kind: "posts", items: [%{"title" => "Only", "slug" => "only"}]}}
+
+      assert request(dir, :post, "/__preview/settings", payload).status == 204
+
+      stored = dir |> Settings.path() |> File.read!() |> Jason.decode!()
+      assert [%{"slug" => "only"}] = stored["content"]["posts"]
+
+      assert request(dir, :get, "/posts/only").status == 200
+      assert request(dir, :get, "/posts/hello").status == 404
     end
 
     test "posting settings writes the file, and the next render reflects them", %{dir: dir} do
@@ -199,9 +249,10 @@ defmodule MastheadCli.RouterTest do
             %{"_id" => 2, "label" => "Blog", "url" => ""}
           ]
         },
-        page: %{
+        settings: %{
+          kind: "page",
           slug: "home",
-          metadata: %{
+          options: %{
             "hero" => %{"title" => "Edited page"},
             "crew" => [%{"_id" => 3, "name" => "Ada"}]
           }
@@ -220,7 +271,7 @@ defmodule MastheadCli.RouterTest do
                %{"label" => "Blog"}
              ]
 
-      assert stored["pages"]["home"]["metadata"]["crew"] == [%{"name" => "Ada"}]
+      assert stored["pages"]["home"]["page_options"]["crew"] == [%{"name" => "Ada"}]
       refute stored |> Jason.encode!() |> String.contains?("_id")
 
       # And the theme renders them — the whole point of the round-trip.

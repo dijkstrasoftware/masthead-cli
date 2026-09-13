@@ -107,9 +107,20 @@ defmodule MastheadCli.Router do
       _ -> :ok
     end
 
-    case Map.get(payload, "page") do
-      %{"slug" => slug, "metadata" => %{} = metadata} when is_binary(slug) ->
-        Settings.put_page_metadata(dir, slug, metadata, page_fields(theme, dir, slug))
+    case Map.get(payload, "content") do
+      %{"kind" => kind, "items" => items} when kind in ["posts", "pages"] and is_list(items) ->
+        Settings.put_content(dir, kind, items)
+
+      _ ->
+        :ok
+    end
+
+    case Map.get(payload, "settings") do
+      %{"kind" => "page", "slug" => slug, "options" => %{} = options} when is_binary(slug) ->
+        Settings.put_page_options(dir, slug, options, page_fields(theme, dir, slug))
+
+      %{"kind" => "post", "slug" => slug, "options" => %{} = options} when is_binary(slug) ->
+        Settings.put_post_options(dir, slug, options, theme.manifest.post_options)
 
       _ ->
         :ok
@@ -117,20 +128,9 @@ defmodule MastheadCli.Router do
   end
 
   defp page_fields(theme, dir, slug) do
-    data = PreviewConfig.load(dir)
-
-    case Enum.find(data.pages, &(&1.slug == slug)) do
-      %{format: "theme", template: template} when is_binary(template) ->
-        case Map.get(theme.page_configs, template) do
-          %{metadata: fields} when is_list(fields) -> fields
-          _ -> []
-        end
-
-      %{} ->
-        theme.manifest.metadata
-
-      nil ->
-        []
+    case Enum.find(PreviewConfig.load(dir).pages, &(&1.slug == slug)) do
+      nil -> []
+      page -> State.page_fields(theme, page)
     end
   end
 
