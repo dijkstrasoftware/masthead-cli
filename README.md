@@ -32,21 +32,25 @@ template that previews correctly here renders the same way in production.
 ### Homebrew (recommended)
 
 ```sh
-brew install joeridijkstra/tap/masthead
+brew install dijkstrasoftware/tap/masthead
 ```
 
 To track the latest `main` instead of the newest release:
 
 ```sh
-brew install --HEAD joeridijkstra/tap/masthead
+brew install --HEAD dijkstrasoftware/tap/masthead
 ```
+
+The formula lives in the
+[dijkstrasoftware/homebrew-tap](https://github.com/dijkstrasoftware/homebrew-tap)
+repository.
 
 ### From source
 
 Requires Elixir (`~> 1.15`; developed on 1.18 / OTP 28).
 
 ```sh
-git clone https://github.com/JoeriDijkstra/masthead-cli ~/personal/masthead_cli
+git clone https://github.com/dijkstrasoftware/masthead-cli ~/personal/masthead_cli
 cd ~/personal/masthead_cli
 mix deps.get
 mix escript.build          # produces ./masthead
