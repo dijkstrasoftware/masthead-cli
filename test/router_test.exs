@@ -239,6 +239,24 @@ defmodule MastheadCli.RouterTest do
       assert request(dir, :get, "/posts/hello").status == 404
     end
 
+    test "content posted by the sidebar keeps each page's options", %{dir: dir} do
+      # The sidebar sends items back in the shape `state` hands out: settings under "options".
+      page = %{
+        "title" => "Home",
+        "slug" => "home",
+        "format" => "theme",
+        "template" => "home",
+        "options" => %{"hero" => %{"title" => "Kept hero"}, "crew" => [%{"name" => "Ada"}]}
+      }
+
+      payload = %{content: %{kind: "pages", items: [page]}}
+      assert request(dir, :post, "/__preview/settings", payload).status == 204
+
+      body = request(dir, :get, "/").resp_body
+      assert body =~ ~s(data-title="Kept hero")
+      assert body =~ "<span>Ada</span>"
+    end
+
     test "posting settings writes the file, and the next render reflects them", %{dir: dir} do
       payload = %{
         tokens: %{
