@@ -214,7 +214,8 @@ defmodule MastheadCli.PreviewConfig do
       format: m["format"] || "markdown",
       published_at: parse_datetime(m["published_at"]),
       tags: normalize_tags(m["tags"]),
-      post_options: m["post_options"] || %{},
+      # The sidebar's content editor stores an item's settings as `"options"`.
+      post_options: m["post_options"] || m["options"] || %{},
       body: m["body"] || ""
     }
   end
@@ -244,7 +245,7 @@ defmodule MastheadCli.PreviewConfig do
       # For `"format": "theme"` pages: which templates/pages/<template>.liquid.
       template: m["template"],
       show_in_nav: Map.get(m, "show_in_nav", true),
-      page_options: m["page_options"] || m["metadata"] || %{},
+      page_options: m["page_options"] || m["options"] || m["metadata"] || %{},
       body: m["body"] || ""
     }
   end
